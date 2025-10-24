@@ -1,0 +1,29 @@
+{
+  "name": "capstone",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MasonR03/Capstone_Project.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/MasonR03/Capstone_Project/issues"
+  },
+  "homepage": "https://github.com/MasonR03/Capstone_Project#readme",
+  "dependencies": {
+    "canvas": "^3.2.0",
+    "datauri": "^4.1.0",
+    "express": "^5.1.0",
+    "jsdom": "^27.0.1",
+    "phaser": "^3.90.0",
+    "socket.io": "^4.8.1"
+  }
+}
