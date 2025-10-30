@@ -1,10 +1,14 @@
 <!DOCTYPE html>
 <html>
-    <head>
-        <meta charset="utf-8">
-    </head>
-    <body>
-        <script src="https://cdn.jsdelivr.net/npm/phaser@3.15.1/dist/phaser.min.js"></script>
-        <script src="js/game.js"></script>
-    </body>
+  <head>
+    <meta charset="utf-8" />
+    <title>Authoritative Headless Server</title>
+  </head>
+  <body>
+    <!-- load Phaser locally so jsdom doesn't hit a CDN -->
+    <script src="./phaser.min.js"></script>
+
+    <!-- load the authoritative server game loop -->
+    <script src="./js/game.js"></script>
+  </body>
 </html>

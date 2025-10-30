@@ -1,17 +1,21 @@
-// Keeps track of the players there.
+// ~~~ Server authoritative state ~~~
+// Keeps track of all connected players by socket id
 const players = {};
 
-// A very simple game config from Phaser.
+// ~~~ Phaser server config ~~~
+// This Phaser instance runs in jsdom with HEADLESS mode.
+// It simulates physics and game rules and broadcasts state to clients.
+// Rendering / HUD happens in the browser client, not here.
 const config = {
-  type: Phaser.HEADLESS, // This will make it so theres no rendering, but just physics and logic
+  type: Phaser.HEADLESS,           // no rendering, just logic and physics
   parent: 'phaser-example',
-  width: 800, // world width
-  height: 600, // world height
+  width: 800,                      // world width (you can grow this later)
+  height: 600,                     // world height
   physics: {
     default: 'arcade',
     arcade: {
-      debug: false, // true will show hitboxes.
-      gravity: { y: 0 } // top-down style movement.
+      debug: false,
+      gravity: { y: 0 }            // top-down, zero gravity
     }
   },
   scene: {
@@ -22,94 +26,123 @@ const config = {
   autoFocus: false
 };
 
-
-// loads the assets to the server
+// ~~~ Preload ~~~
+// Load assets so Phaser knows their sizes for physics bodies.
+// Even headless Phaser still uses frame data for body size.
 function preload() {
   this.load.image('ship', 'assets/spaceShips_001.png');
   this.load.image('star', 'assets/star_gold.png');
 }
 
+// ~~~ Create ~~~
 function create() {
   const self = this;
-  // physics group that holds the ship bodies
+
+  // physics group for all player ships
   this.players = this.physics.add.group();
 
-  // simple score system
+  // simple team score
   this.scores = {
     blue: 0,
     red: 0
   };
 
-  this.star = this.physics.add.image(Math.floor(Math.random() * 700) + 50, Math.floor(Math.random() * 500) + 50, 'star');
-  // player bouncing when colliding
+  // spawn the star pickup somewhere in the map
+  this.star = this.physics.add.image(
+    Math.floor(Math.random() * 700) + 50,
+    Math.floor(Math.random() * 500) + 50,
+    'star'
+  );
+
+  // make players collide with each other
   this.physics.add.collider(this.players);
 
-  // check to see if player overlaps the star
+  // detect when a player overlaps (touches) the star
   this.physics.add.overlap(this.players, this.star, function (star, player) {
-    // figures out the player's team and add score
+    // add score to that player's team
     if (players[player.playerId].team === 'red') {
       self.scores.red += 10;
     } else {
       self.scores.blue += 10;
     }
-    self.star.setPosition(Math.floor(Math.random() * 700) + 50, Math.floor(Math.random() * 500) + 50);
-    io.emit('updateScore', self.scores); // allows the scorre to be changed
-    io.emit('starLocation', { x: self.star.x, y: self.star.y }); // new star pos.
+
+    // move the star somewhere else
+    self.star.setPosition(
+      Math.floor(Math.random() * 700) + 50,
+      Math.floor(Math.random() * 500) + 50
+    );
+
+    // broadcast updated score + star position to everyone
+    io.emit('updateScore', self.scores);
+    io.emit('starLocation', { x: self.star.x, y: self.star.y });
   });
 
-  // listens to new player connections
+  // ~~~ Socket handlers ~~~
+  // each web client that connects to socket.io becomes a player
   io.on('connection', function (socket) {
-    console.log('a user connected');
-    // create a new player and add it to our players object
+    console.log('a user connected', socket.id);
+
+    // create player data in authoritative state
     players[socket.id] = {
       rotation: 0,
       x: Math.floor(Math.random() * 700) + 50,
       y: Math.floor(Math.random() * 500) + 50,
       playerId: socket.id,
-      // randomly assigned teams
-      team: (Math.floor(Math.random() * 2) == 0) ? 'red' : 'blue',
-      // store input state coming from the client.
+      team: (Math.floor(Math.random() * 2) === 0) ? 'red' : 'blue',
       input: {
         left: false,
         right: false,
         up: false
-      }
+      },
+      // stats (these are what power your HUD in clientGame.js)
+      hp: 100,
+      maxHp: 100,
+      xp: 0,
+      maxXp: 100
     };
-    // add player to server
+
+    // spawn a physics body for this player
     addPlayer(self, players[socket.id]);
-    // send the players object to the new player
+
+    // send the whole current players list to JUST the new player
     socket.emit('currentPlayers', players);
-    // update all other players of the new player
+
+    // tell everyone else "hey here's a new player"
     socket.broadcast.emit('newPlayer', players[socket.id]);
 
-    // send the star object to the new player
+    // send star position + score to the new player
     socket.emit('starLocation', { x: self.star.x, y: self.star.y });
-    // send the current scores
     socket.emit('updateScore', self.scores);
 
-    // when a player moves, update the player data
+    // listen for this player's inputs so we can simulate them
     socket.on('playerInput', function (inputData) {
       handlePlayerInput(self, socket.id, inputData);
     });
 
+    // player disconnects
     socket.on('disconnect', function () {
-      console.log('user disconnected');
-      // remove player from server
+      console.log('user disconnected', socket.id);
+
+      // remove physics body from the scene
       removePlayer(self, socket.id);
-      // remove this player from our players object
+
+      // remove from our authoritative object
       delete players[socket.id];
-  // emit a message to all players to remove this player
-  // 'disconnect' is a reserved Socket.IO event name; use a custom event instead
-  io.emit('playerDisconnected', socket.id);
+
+      // tell all clients to delete this sprite
+      io.emit('playerDisconnected', socket.id);
     });
   });
 }
 
+// ~~~ Update ~~~
+// runs every tick server-side
 function update() {
-  // update each player based on their stored input and broadcast positions
+  // apply movement for each ship based on its stored input flags
   this.players.getChildren().forEach((player) => {
     const input = players[player.playerId].input;
-    // rotaion / turning
+
+    // turn
     if (input.left) {
       player.setAngularVelocity(-300);
     } else if (input.right) {
@@ -118,27 +151,33 @@ function update() {
       player.setAngularVelocity(0);
     }
 
-    // thrust forward in the direction the ship is facing
+    // thrust forward
     if (input.up) {
-      // physics.velocityFromRotation(angle, speed, outVec)
-      this.physics.velocityFromRotation(player.rotation + 1.5, 200, player.body.acceleration);
+      // rotate + thrust in facing direction
+      this.physics.velocityFromRotation(
+        player.rotation + 1.5,
+        200,
+        player.body.acceleration
+      );
     } else {
       player.setAcceleration(0);
     }
 
-    // sync the authoritative data 
+    // sync updated position/rotation back to the authoritative state
     players[player.playerId].x = player.x;
     players[player.playerId].y = player.y;
     players[player.playerId].rotation = player.rotation;
   });
 
-  // wrap around world edges with a 5px padding
+  // wrap players around world edges
   this.physics.world.wrap(this.players, 5);
-  // broadcast updated player positions/rotations to all clients
+
+  // broadcast authoritative player states to all clients
   io.emit('playerUpdates', players);
 }
 
-// Store latest inputs from a specific client so update() can apply them
+// ~~~ Handle player input ~~~
+// store most recent inputs from a client; update() will apply them
 function handlePlayerInput(self, playerId, input) {
   self.players.getChildren().forEach((player) => {
     if (playerId === player.playerId) {
@@ -147,29 +186,23 @@ function handlePlayerInput(self, playerId, input) {
   });
 }
 
-// helper to get a random in-range position
-// NOTE this doesn't seem to be used?
-function randomPosition(max) {
-  return Math.floor(Math.random() * max) + 50;
-}
-
-// Spawns a physics sprite for the player and configures movement limits
+// ~~~ Add player ~~~
+// actually create the Arcade Physics body for a new player
 function addPlayer(self, playerInfo) {
-  const player = self.physics.add.image(playerInfo.x, playerInfo.y, 'ship')
-  .setOrigin(0.5, 0.5)
-  .setDisplaySize(53, 40); // scale the ship sprite
+  const player = self.physics.add
+    .image(playerInfo.x, playerInfo.y, 'ship')
+    .setOrigin(0.5, 0.5)
+    .setDisplaySize(53, 40);
 
-  // movement turning
   player.setDrag(100);
   player.setAngularDrag(100);
   player.setMaxVelocity(200);
-  // attach the socket id to the physics body so we can map back
+
   player.playerId = playerInfo.playerId;
-  // add to the physics group
   self.players.add(player);
 }
 
-// Destroys the physics sprite when someone leaves
+// ~~~ Remove player ~~~
 function removePlayer(self, playerId) {
   self.players.getChildren().forEach((player) => {
     if (playerId === player.playerId) {
@@ -178,7 +211,10 @@ function removePlayer(self, playerId) {
   });
 }
 
-// Start the Phaser "game loop" running in headless mode
+// ~~~ Boot the headless Phaser sim ~~~
 const game = new Phaser.Game(config);
-// Let whatever bootstraps this know the server-side game is initialized
-window.gameLoaded();
+
+// let the outer server (index.js) know we finished booting
+if (typeof window !== 'undefined' && typeof window.gameLoaded === 'function') {
+  window.gameLoaded();
+}
