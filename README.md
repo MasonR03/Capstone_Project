@@ -1,6 +1,6 @@
-# Capstone Project
+# Orbit Fall
 
-Phaser project with an authoritative server component.
+A 2D arcade-style multiplayer space game built with Phaser 3 and Socket.IO.
 
 ## Overview
 
@@ -18,6 +18,12 @@ npm install
 
 ```powershell
 node .\server\index.js
+```
+
+Or
+
+```powershell
+npm run dev
 ```
 
 3. Watch the server output. The authoritative server triggers the HTTP listener and will log a message like:
@@ -53,3 +59,12 @@ Note: the server starts listening on port 8082 once the embedded jsdom runner ca
 
 - The server uses `jsdom` to run the authoritative Phaser client in a headless DOM; `gameLoaded` in that DOM triggers the HTTP server to start listening.
 - If you want the server to start immediately without waiting for the DOM event, modify `server/index.js` to call `server.listen(...)` directly.
+
+
+## Controls
+
+- Arrow Keys
+  - Left: Turn Left (Counter-Clockwise)
+  - Right: Turn Right (Clockwise)
+  - Up: Thrust Forward
+  - Down: Reverse Thrust
