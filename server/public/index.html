@@ -14,6 +14,7 @@
         justify-content: center;
         align-items: center;
         height: 100vh;
+        position: relative;
       }
       #game-container {
         width: 800px;
@@ -22,16 +23,68 @@
         border: 4px solid #00ffff;
         box-shadow: 0 0 20px rgba(0, 255, 255, 0.5);
       }
+      #debug-button {
+        position: absolute;
+        top: 20px;
+        right: 20px;
+        padding: 10px 20px;
+        background: rgba(0, 255, 255, 0.2);
+        border: 2px solid #00ffff;
+        color: #00ffff;
+        cursor: pointer;
+        font-family: monospace;
+        font-size: 14px;
+        display: none;
+        z-index: 1000;
+      }
+      #debug-button:hover {
+        background: rgba(0, 255, 255, 0.3);
+      }
+      #debug-panel {
+        position: absolute;
+        top: 70px;
+        right: 20px;
+        padding: 15px;
+        background: rgba(0, 0, 0, 0.9);
+        border: 2px solid #00ffff;
+        color: #00ffff;
+        font-family: monospace;
+        font-size: 14px;
+        display: none;
+        z-index: 1000;
+        min-width: 200px;
+      }
+      #debug-panel h3 {
+        margin: 0 0 10px 0;
+        font-size: 16px;
+        border-bottom: 1px solid #00ffff;
+        padding-bottom: 5px;
+      }
+      #debug-panel .coord {
+        margin: 5px 0;
+      }
     </style>
   </head>
   <body>
     <div id="game-container"></div>
+    <button id="debug-button">Debug Tools</button>
+    <div id="debug-panel">
+      <h3>Debug Info</h3>
+      <div class="coord">X: <span id="pos-x">-</span></div>
+      <div class="coord">Y: <span id="pos-y">-</span></div>
+      <div class="coord">CAM_X: <span id="cam-x">-</span></div>
+      <div class="coord">CAM_Y: <span id="cam-y">-</span></div>
+      <div class="coord">Vel: <span id="velocity">-</span></div>
+    </div>
 
     <!-- socket.io client served by express -->
     <script src="/socket.io/socket.io.js"></script>
 
     <!-- phaser browser build -->
     <script src="https://cdn.jsdelivr.net/npm/phaser@3.15.1/dist/phaser.min.js"></script>
+
+    <!-- debug tools -->
+    <script src="debug.js"></script>
 
     <!-- our game code -->
     <script src="clientGame.js"></script>

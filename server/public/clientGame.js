@@ -64,6 +64,17 @@ function preload() {
 function create() {
   const self = this;
 
+  // Initialize debug tools if running locally
+  DebugTools.init(game, () => {
+    // Callback to get current player
+    if (myId && clientPlayers[myId]) {
+      return { player: clientPlayers[myId] };
+    } else if (localPlayerSprite) {
+      return { player: localPlayerSprite };
+    }
+    return null;
+  });
+
   // physics world size
   this.physics.world.setBounds(0, 0, WORLD_W, WORLD_H);
   this.cameras.main.setBounds(0, 0, WORLD_W, WORLD_H);
