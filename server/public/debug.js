@@ -5,6 +5,7 @@ const DebugTools = (() => {
   let positionUpdateInterval = null;
   let gameInstance = null;
   let getPlayerCallback = null;
+  let debugGridGraphics = null;
 
   // Check if running locally
   function isRunningLocally() {
@@ -18,10 +19,11 @@ const DebugTools = (() => {
   }
 
   // Initialize debug tools
-  function init(game, getPlayer) {
+  function init(game, getPlayer, gridGraphics) {
     // Store references
     gameInstance = game;
     getPlayerCallback = getPlayer;
+    debugGridGraphics = gridGraphics;
 
     // Only show debug tools if running locally
     if (!isRunningLocally()) return;
@@ -36,6 +38,11 @@ const DebugTools = (() => {
     debugButton.addEventListener('click', () => {
       debugPanelVisible = !debugPanelVisible;
       debugPanel.style.display = debugPanelVisible ? 'block' : 'none';
+
+      // Toggle gridlines visibility
+      if (debugGridGraphics) {
+        debugGridGraphics.setVisible(debugPanelVisible);
+      }
 
       if (debugPanelVisible) {
         startPositionUpdates();

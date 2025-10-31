@@ -67,6 +67,11 @@ function preload() {
 function create() {
   const self = this;
 
+  // Create graphics object for debug gridlines
+  this.debugGridGraphics = this.add.graphics();
+  this.debugGridGraphics.setDepth(-1); // Behind everything else
+  this.debugGridGraphics.setVisible(false); // Hidden by default
+
   // Initialize debug tools if running locally
   DebugTools.init(game, () => {
     // Callback to get current player
@@ -76,11 +81,14 @@ function create() {
       return { player: localPlayerSprite };
     }
     return null;
-  });
+  }, this.debugGridGraphics);
 
   // physics world size
   this.physics.world.setBounds(0, 0, WORLD_W, WORLD_H);
   this.cameras.main.setBounds(0, 0, WORLD_W, WORLD_H);
+
+  // Draw debug gridlines (100x100 squares)
+  drawDebugGrid(this.debugGridGraphics, WORLD_W, WORLD_H);
 
   // Add dark red border visualization
   const borderWidth = 30;
@@ -367,4 +375,39 @@ function collectStar(scene) {
 function safeDiv(n, d) {
   if (!d || d === 0) return 0;
   return n / d;
+}
+
+// Draw debug gridlines (100x100 squares)
+function drawDebugGrid(graphics, worldWidth, worldHeight) {
+  graphics.clear();
+  graphics.lineStyle(1, 0x444444, 0.3);
+
+  // Draw lines
+  for (let x = 0; x <= worldWidth; x += 100) {
+    graphics.moveTo(x, 0);
+    graphics.lineTo(x, worldHeight);
+  }
+
+  for (let y = 0; y <= worldHeight; y += 100) {
+    graphics.moveTo(0, y);
+    graphics.lineTo(worldWidth, y);
+  }
+
+  // Add coordinate labels at grid intersections (every 500 units)
+  graphics.lineStyle(1, 0x666666, 0.5); // Slightly brighter for major gridlines
+  for (let x = 0; x <= worldWidth; x += 500) {
+    for (let y = 0; y <= worldHeight; y += 500) {
+      // Draw thicker lines at 500 unit intervals
+      if (x > 0) {
+        graphics.moveTo(x, 0);
+        graphics.lineTo(x, worldHeight);
+      }
+      if (y > 0) {
+        graphics.moveTo(0, y);
+        graphics.lineTo(worldWidth, y);
+      }
+    }
+  }
+
+  graphics.strokePath();
 }
