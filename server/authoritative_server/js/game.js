@@ -214,9 +214,9 @@ function addPlayer(self, playerInfo) {
     .setOrigin(0.5, 0.5)
     .setDisplaySize(53, 40);
 
-  player.setDrag(100);
-  player.setAngularDrag(100);
-  player.setMaxVelocity(200);
+  player.setDrag(0);
+  player.setAngularDrag(0);
+  player.setMaxVelocity(400);
 
   player.playerId = playerInfo.playerId;
   self.players.add(player);

@@ -173,9 +173,9 @@ function create() {
     .setOrigin(0.5, 0.5)
     .setDisplaySize(53, 40);
 
-  localPlayerSprite.setDrag(100);
-  localPlayerSprite.setAngularDrag(100);
-  localPlayerSprite.setMaxVelocity(200);
+  localPlayerSprite.setDrag(0);
+  localPlayerSprite.setAngularDrag(0);
+  localPlayerSprite.setMaxVelocity(400);
 
   // camera follows local player
   this.cameras.main.startFollow(localPlayerSprite, true, 0.1, 0.1);
