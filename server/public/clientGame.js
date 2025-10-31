@@ -116,7 +116,8 @@ function create() {
   cursors = this.input.keyboard.addKeys({
     left: Phaser.Input.Keyboard.KeyCodes.LEFT,
     right: Phaser.Input.Keyboard.KeyCodes.RIGHT,
-    up: Phaser.Input.Keyboard.KeyCodes.UP
+    up: Phaser.Input.Keyboard.KeyCodes.UP,
+    down: Phaser.Input.Keyboard.KeyCodes.DOWN
   });
 
   // ~~~ HUD setup ~~~
@@ -279,13 +280,33 @@ function update(time, delta) {
       body.angularVelocity = 0;
     }
 
-    // thrust
+    // thrust forward
     if (cursors.up.isDown) {
       this.physics.velocityFromRotation(
         localPlayerSprite.rotation + 1.5,
         200,
         body.acceleration
       );
+    }
+    // reverse thruster - decelerate to zero
+    else if (cursors.down.isDown) {
+      // Apply deceleration proportional to current velocity
+      const currentVel = body.velocity.length();
+      if (currentVel > 50) {
+        // Normal deceleration for higher speeds
+        const decelX = -body.velocity.x * 0.1;
+        const decelY = -body.velocity.y * 0.1;
+        body.setAcceleration(decelX * 10, decelY * 10);
+      } else if (currentVel > 5) {
+        // Aggressive deceleration when below 50 velocity
+        const decelX = -body.velocity.x * 0.3;
+        const decelY = -body.velocity.y * 0.3;
+        body.setAcceleration(decelX * 10, decelY * 10);
+      } else {
+        // When nearly stopped, set velocity to zero
+        body.setVelocity(0, 0);
+        body.setAcceleration(0, 0);
+      }
     } else {
       localPlayerSprite.setAcceleration(0);
     }
@@ -312,7 +333,8 @@ function update(time, delta) {
   const inputPayload = {
     left: cursors.left.isDown,
     right: cursors.right.isDown,
-    up: cursors.up.isDown
+    up: cursors.up.isDown,
+    down: cursors.down.isDown
   };
   socket.emit('playerInput', inputPayload);
 

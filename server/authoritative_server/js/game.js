@@ -95,7 +95,8 @@ function create() {
       input: {
         left: false,
         right: false,
-        up: false
+        up: false,
+        down: false
       },
       // stats (these are what power your HUD in clientGame.js)
       hp: 100,
@@ -162,6 +163,26 @@ function update() {
         200,
         player.body.acceleration
       );
+    }
+    // reverse thruster - decelerate to zero
+    else if (input.down) {
+      // Apply deceleration proportional to current velocity
+      const currentVel = player.body.velocity.length();
+      if (currentVel > 50) {
+        // Normal deceleration for higher speeds
+        const decelX = -player.body.velocity.x * 0.1;
+        const decelY = -player.body.velocity.y * 0.1;
+        player.body.setAcceleration(decelX * 10, decelY * 10);
+      } else if (currentVel > 5) {
+        // Aggressive deceleration when below 50 velocity
+        const decelX = -player.body.velocity.x * 0.3;
+        const decelY = -player.body.velocity.y * 0.3;
+        player.body.setAcceleration(decelX * 10, decelY * 10);
+      } else {
+        // When nearly stopped, set velocity to zero
+        player.body.setVelocity(0, 0);
+        player.body.setAcceleration(0, 0);
+      }
     } else {
       player.setAcceleration(0);
     }
