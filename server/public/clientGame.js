@@ -7,6 +7,9 @@ const socket = io({
 const clientPlayers = {};   // playerId -> Phaser sprite
 let myId = null;            // socket.id for me
 
+// Border buffer distance - how far from edge to stop ships
+const BORDER_BUFFER = 20;
+
 // server broadcast scores (we'll also edit this locally for solo mode)
 let serverScores = { red: 0, blue: 0 };
 
@@ -78,6 +81,19 @@ function create() {
   // physics world size
   this.physics.world.setBounds(0, 0, WORLD_W, WORLD_H);
   this.cameras.main.setBounds(0, 0, WORLD_W, WORLD_H);
+
+  // Add dark red border visualization
+  const borderWidth = 30;
+  const borderColor = 0x880000;
+
+  // Top border
+  this.add.rectangle(WORLD_W / 2, borderWidth / 2, WORLD_W, borderWidth, borderColor);
+  // Bottom border
+  this.add.rectangle(WORLD_W / 2, WORLD_H - borderWidth / 2, WORLD_W, borderWidth, borderColor);
+  // Left border
+  this.add.rectangle(borderWidth / 2, WORLD_H / 2, borderWidth, WORLD_H, borderColor);
+  // Right border
+  this.add.rectangle(WORLD_W - borderWidth / 2, WORLD_H / 2, borderWidth, WORLD_H, borderColor);
 
   // group of networked players (from server if/when we get them)
   this.playersGroup = this.physics.add.group();
@@ -266,8 +282,22 @@ function update(time, delta) {
       localPlayerSprite.setAcceleration(0);
     }
 
-    // wrap
-    this.physics.world.wrap(localPlayerSprite, 5);
+    // clamp to world bounds (with buffer from edge)
+    if (localPlayerSprite.x < BORDER_BUFFER) {
+      localPlayerSprite.x = BORDER_BUFFER;
+      localPlayerSprite.setVelocityX(0);
+    } else if (localPlayerSprite.x > WORLD_W - BORDER_BUFFER) {
+      localPlayerSprite.x = WORLD_W - BORDER_BUFFER;
+      localPlayerSprite.setVelocityX(0);
+    }
+
+    if (localPlayerSprite.y < BORDER_BUFFER) {
+      localPlayerSprite.y = BORDER_BUFFER;
+      localPlayerSprite.setVelocityY(0);
+    } else if (localPlayerSprite.y > WORLD_H - BORDER_BUFFER) {
+      localPlayerSprite.y = WORLD_H - BORDER_BUFFER;
+      localPlayerSprite.setVelocityY(0);
+    }
   }
 
   // SEND INPUT STATE TO SERVER (future authoritative mode)

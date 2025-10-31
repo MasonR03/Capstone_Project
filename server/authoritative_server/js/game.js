@@ -2,6 +2,9 @@
 // Keeps track of all connected players by socket id
 const players = {};
 
+// Border buffer distance - how far from edge to stop ships
+const BORDER_BUFFER = 20;
+
 // ~~~ Phaser server config ~~~
 // This Phaser instance runs in jsdom with HEADLESS mode.
 // It simulates physics and game rules and broadcasts state to clients.
@@ -169,8 +172,25 @@ function update() {
     players[player.playerId].rotation = player.rotation;
   });
 
-  // wrap players around world edges
-  this.physics.world.wrap(this.players, 5);
+  // clamp players to world bounds (with buffer from edge)
+  this.players.getChildren().forEach((player) => {
+    // Stop at borders instead of wrapping (with buffer)
+    if (player.x < BORDER_BUFFER) {
+      player.x = BORDER_BUFFER;
+      player.setVelocityX(0);
+    } else if (player.x > 800 - BORDER_BUFFER) {
+      player.x = 800 - BORDER_BUFFER;
+      player.setVelocityX(0);
+    }
+
+    if (player.y < BORDER_BUFFER) {
+      player.y = BORDER_BUFFER;
+      player.setVelocityY(0);
+    } else if (player.y > 600 - BORDER_BUFFER) {
+      player.y = 600 - BORDER_BUFFER;
+      player.setVelocityY(0);
+    }
+  });
 
   // broadcast authoritative player states to all clients
   io.emit('playerUpdates', players);
