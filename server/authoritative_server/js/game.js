@@ -2,6 +2,9 @@
 // Keeps track of all connected players by socket id
 const players = {};
 
+// Border buffer distance - how far from edge to stop ships
+const BORDER_BUFFER = 20;
+
 // ~~~ Phaser server config ~~~
 // This Phaser instance runs in jsdom with HEADLESS mode.
 // It simulates physics and game rules and broadcasts state to clients.
@@ -92,7 +95,8 @@ function create() {
       input: {
         left: false,
         right: false,
-        up: false
+        up: false,
+        down: false
       },
       // stats (these are what power your HUD in clientGame.js)
       hp: 100,
@@ -159,6 +163,26 @@ function update() {
         200,
         player.body.acceleration
       );
+    }
+    // reverse thruster - decelerate to zero
+    else if (input.down) {
+      // Apply deceleration proportional to current velocity
+      const currentVel = player.body.velocity.length();
+      if (currentVel > 50) {
+        // Normal deceleration for higher speeds
+        const decelX = -player.body.velocity.x * 0.1;
+        const decelY = -player.body.velocity.y * 0.1;
+        player.body.setAcceleration(decelX * 10, decelY * 10);
+      } else if (currentVel > 5) {
+        // Aggressive deceleration when below 50 velocity
+        const decelX = -player.body.velocity.x * 0.3;
+        const decelY = -player.body.velocity.y * 0.3;
+        player.body.setAcceleration(decelX * 10, decelY * 10);
+      } else {
+        // When nearly stopped, set velocity to zero
+        player.body.setVelocity(0, 0);
+        player.body.setAcceleration(0, 0);
+      }
     } else {
       player.setAcceleration(0);
     }
@@ -169,8 +193,25 @@ function update() {
     players[player.playerId].rotation = player.rotation;
   });
 
-  // wrap players around world edges
-  this.physics.world.wrap(this.players, 5);
+  // clamp players to world bounds (with buffer from edge)
+  this.players.getChildren().forEach((player) => {
+    // Stop at borders instead of wrapping (with buffer)
+    if (player.x < BORDER_BUFFER) {
+      player.x = BORDER_BUFFER;
+      player.setVelocityX(0);
+    } else if (player.x > 800 - BORDER_BUFFER) {
+      player.x = 800 - BORDER_BUFFER;
+      player.setVelocityX(0);
+    }
+
+    if (player.y < BORDER_BUFFER) {
+      player.y = BORDER_BUFFER;
+      player.setVelocityY(0);
+    } else if (player.y > 600 - BORDER_BUFFER) {
+      player.y = 600 - BORDER_BUFFER;
+      player.setVelocityY(0);
+    }
+  });
 
   // broadcast authoritative player states to all clients
   io.emit('playerUpdates', players);
@@ -194,9 +235,9 @@ function addPlayer(self, playerInfo) {
     .setOrigin(0.5, 0.5)
     .setDisplaySize(53, 40);
 
-  player.setDrag(100);
-  player.setAngularDrag(100);
-  player.setMaxVelocity(200);
+  player.setDrag(0);
+  player.setAngularDrag(0);
+  player.setMaxVelocity(400);
 
   player.playerId = playerInfo.playerId;
   self.players.add(player);

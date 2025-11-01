@@ -7,6 +7,9 @@ const socket = io({
 const clientPlayers = {};   // playerId -> Phaser sprite
 let myId = null;            // socket.id for me
 
+// Border buffer distance - how far from edge to stop ships
+const BORDER_BUFFER = 20;
+
 // server broadcast scores (we'll also edit this locally for solo mode)
 let serverScores = { red: 0, blue: 0 };
 
@@ -64,9 +67,41 @@ function preload() {
 function create() {
   const self = this;
 
+  // Create graphics object for debug gridlines
+  this.debugGridGraphics = this.add.graphics();
+  this.debugGridGraphics.setDepth(-1); // Behind everything else
+  this.debugGridGraphics.setVisible(false); // Hidden by default
+
+  // Initialize debug tools if running locally
+  DebugTools.init(game, () => {
+    // Callback to get current player
+    if (myId && clientPlayers[myId]) {
+      return { player: clientPlayers[myId] };
+    } else if (localPlayerSprite) {
+      return { player: localPlayerSprite };
+    }
+    return null;
+  }, this.debugGridGraphics);
+
   // physics world size
   this.physics.world.setBounds(0, 0, WORLD_W, WORLD_H);
   this.cameras.main.setBounds(0, 0, WORLD_W, WORLD_H);
+
+  // Draw debug gridlines (100x100 squares)
+  drawDebugGrid(this.debugGridGraphics, WORLD_W, WORLD_H);
+
+  // Add dark red border visualization
+  const borderWidth = 30;
+  const borderColor = 0x880000;
+
+  // Top border
+  this.add.rectangle(WORLD_W / 2, borderWidth / 2, WORLD_W, borderWidth, borderColor);
+  // Bottom border
+  this.add.rectangle(WORLD_W / 2, WORLD_H - borderWidth / 2, WORLD_W, borderWidth, borderColor);
+  // Left border
+  this.add.rectangle(borderWidth / 2, WORLD_H / 2, borderWidth, WORLD_H, borderColor);
+  // Right border
+  this.add.rectangle(WORLD_W - borderWidth / 2, WORLD_H / 2, borderWidth, WORLD_H, borderColor);
 
   // group of networked players (from server if/when we get them)
   this.playersGroup = this.physics.add.group();
@@ -81,7 +116,8 @@ function create() {
   cursors = this.input.keyboard.addKeys({
     left: Phaser.Input.Keyboard.KeyCodes.LEFT,
     right: Phaser.Input.Keyboard.KeyCodes.RIGHT,
-    up: Phaser.Input.Keyboard.KeyCodes.UP
+    up: Phaser.Input.Keyboard.KeyCodes.UP,
+    down: Phaser.Input.Keyboard.KeyCodes.DOWN
   });
 
   // ~~~ HUD setup ~~~
@@ -146,9 +182,9 @@ function create() {
     .setOrigin(0.5, 0.5)
     .setDisplaySize(53, 40);
 
-  localPlayerSprite.setDrag(100);
-  localPlayerSprite.setAngularDrag(100);
-  localPlayerSprite.setMaxVelocity(200);
+  localPlayerSprite.setDrag(0);
+  localPlayerSprite.setAngularDrag(0);
+  localPlayerSprite.setMaxVelocity(400);
 
   // camera follows local player
   this.cameras.main.startFollow(localPlayerSprite, true, 0.1, 0.1);
@@ -244,26 +280,61 @@ function update(time, delta) {
       body.angularVelocity = 0;
     }
 
-    // thrust
+    // thrust forward
     if (cursors.up.isDown) {
       this.physics.velocityFromRotation(
         localPlayerSprite.rotation + 1.5,
         200,
         body.acceleration
       );
+    }
+    // reverse thruster - decelerate to zero
+    else if (cursors.down.isDown) {
+      // Apply deceleration proportional to current velocity
+      const currentVel = body.velocity.length();
+      if (currentVel > 50) {
+        // Normal deceleration for higher speeds
+        const decelX = -body.velocity.x * 0.1;
+        const decelY = -body.velocity.y * 0.1;
+        body.setAcceleration(decelX * 10, decelY * 10);
+      } else if (currentVel > 5) {
+        // Aggressive deceleration when below 50 velocity
+        const decelX = -body.velocity.x * 0.3;
+        const decelY = -body.velocity.y * 0.3;
+        body.setAcceleration(decelX * 10, decelY * 10);
+      } else {
+        // When nearly stopped, set velocity to zero
+        body.setVelocity(0, 0);
+        body.setAcceleration(0, 0);
+      }
     } else {
       localPlayerSprite.setAcceleration(0);
     }
 
-    // wrap
-    this.physics.world.wrap(localPlayerSprite, 5);
+    // clamp to world bounds (with buffer from edge)
+    if (localPlayerSprite.x < BORDER_BUFFER) {
+      localPlayerSprite.x = BORDER_BUFFER;
+      localPlayerSprite.setVelocityX(0);
+    } else if (localPlayerSprite.x > WORLD_W - BORDER_BUFFER) {
+      localPlayerSprite.x = WORLD_W - BORDER_BUFFER;
+      localPlayerSprite.setVelocityX(0);
+    }
+
+    if (localPlayerSprite.y < BORDER_BUFFER) {
+      localPlayerSprite.y = BORDER_BUFFER;
+      localPlayerSprite.setVelocityY(0);
+    } else if (localPlayerSprite.y > WORLD_H - BORDER_BUFFER) {
+      localPlayerSprite.y = WORLD_H - BORDER_BUFFER;
+      localPlayerSprite.setVelocityY(0);
+    }
   }
 
   // SEND INPUT STATE TO SERVER (future authoritative mode)
   const inputPayload = {
     left: cursors.left.isDown,
     right: cursors.right.isDown,
-    up: cursors.up.isDown
+    up: cursors.up.isDown,
+    down: cursors.down.isDown
   };
   socket.emit('playerInput', inputPayload);
 
@@ -326,4 +397,39 @@ function collectStar(scene) {
 function safeDiv(n, d) {
   if (!d || d === 0) return 0;
   return n / d;
+}
+
+// Draw debug gridlines (100x100 squares)
+function drawDebugGrid(graphics, worldWidth, worldHeight) {
+  graphics.clear();
+  graphics.lineStyle(1, 0x444444, 0.3);
+
+  // Draw lines
+  for (let x = 0; x <= worldWidth; x += 100) {
+    graphics.moveTo(x, 0);
+    graphics.lineTo(x, worldHeight);
+  }
+
+  for (let y = 0; y <= worldHeight; y += 100) {
+    graphics.moveTo(0, y);
+    graphics.lineTo(worldWidth, y);
+  }
+
+  // Add coordinate labels at grid intersections (every 500 units)
+  graphics.lineStyle(1, 0x666666, 0.5); // Slightly brighter for major gridlines
+  for (let x = 0; x <= worldWidth; x += 500) {
+    for (let y = 0; y <= worldHeight; y += 500) {
+      // Draw thicker lines at 500 unit intervals
+      if (x > 0) {
+        graphics.moveTo(x, 0);
+        graphics.lineTo(x, worldHeight);
+      }
+      if (y > 0) {
+        graphics.moveTo(0, y);
+        graphics.lineTo(worldWidth, y);
+      }
+    }
+  }
+
+  graphics.strokePath();
 }

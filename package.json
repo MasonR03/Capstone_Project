@@ -4,6 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
+    "dev": "node server/index.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
@@ -19,7 +20,6 @@
   },
   "homepage": "https://github.com/MasonR03/Capstone_Project#readme",
   "dependencies": {
-    "canvas": "^3.2.0",
     "datauri": "^4.1.0",
     "express": "^5.1.0",
     "jsdom": "^22.1.0",
