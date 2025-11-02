@@ -45,7 +45,23 @@ This project demonstrates a Phaser 3 based client and an "authoritative" Node.js
   - When the server finishes loading it will log a message such as:
 
   ```
-  Listening on 8082
+  Game server running at http://localhost:[PORT]
+  ```
+
+Configure the port via an environment variable or a `.env` file
+
+  - Create a `.env` file in the project root with a `PORT` value (an example `.env` is included):
+
+  ```text
+  PORT=3000
+  ```
+
+  - The server will read `PORT` from the environment, so you can also start the server with an inline environment variable (PowerShell example):
+
+  ```powershell
+  $env:PORT=3000; npm run server
+  # or
+  $env:PORT=3000; node .\server\index.js
   ```
 
 4. Visit the client
@@ -65,7 +81,6 @@ $env:PORT=3000; node .\server\index.js
 ```
 
 - "Missing dependencies": run `npm install` and ensure there are no install errors.
-- Check the console logs produced by `server/index.js` for stack traces and helpful error messages.
 
 ## Controls
 
