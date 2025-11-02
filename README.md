@@ -4,67 +4,102 @@ A 2D arcade-style multiplayer space game built with Phaser 3 and Socket.IO.
 
 ## Overview
 
-This repository contains a small multiplayer/Phaser demo with an "authoritative" server-side HTML runner (using jsdom) and client assets.
+This project demonstrates a Phaser 3 based client and an "authoritative" Node.js server runner together with Socket.IO for networking. The authoritative server can host the game logic and serve a headless HTML runner for automated or server-driven gameplay.
 
-## Quickstart (PowerShell)
+## Features
 
-1. Install dependencies:
+- Local multiplayer demo using Socket.IO
+- Phaser 3 based client (in `public/`)
+- Authoritative HTML runner (in `server/authoritative_server/`) executed via a jsdom-based server runner
+- Simple, moddable codebase intended for learning and prototyping networked gameplay
+
+## Tech stack
+
+- Node.js (server runtime)
+- npm (package management)
+- Express (static assets / minimal HTTP server)
+- Socket.IO (real-time networking)
+- Phaser 3 (game engine)
+- jsdom (used by the authoritative server runner)
+
+## Getting started
+
+Prerequisites
+- Node.js 14+ (LTS recommended)
+- npm (bundled with Node.js)
+
+Install dependencies
 
 ```powershell
 npm install
 ```
 
-2. Start the server:
+Run the server
+
+Start the authoritative server and the HTTP listener using the npm script or Node directly:
 
 ```powershell
+npm run server
+# or
 node .\server\index.js
 ```
 
-Or
-
-```powershell
-npm run dev
-```
-
-3. Watch the server output. The authoritative server triggers the HTTP listener and will log a message like:
+When the server finishes loading it will log a message such as:
 
 ```
 Listening on 8082
 ```
 
-When you see that message the server is accepting connections on port 8082.
+Visit the client
 
-Note: the server starts listening on port 8082 once the embedded jsdom runner calls `gameLoaded` (see `server/index.js`).
+Open your browser and point to the port specified using local host,
 
-## Project layout
+```
+http://localhost:[PORT]
 
-- `server/` - server-side code and the authoritative server HTML
-  - `server/index.js` - Express + jsdom runner + socket.io setup (listens on port 8082 after game load)
-  - `server/authoritative_server/` - authoritative HTML and assets used by the jsdom runner
-- `public/` - client-facing static build (browser-playable client)
-- `package.json` - project dependencies and scripts
-- `.gitignore` - repository ignores
+```
 
-## Ports
+## Running the project
 
-- Authoritative server: 8082 (server logs this when ready).
+- Development server: `node .\server\index.js` (or `npm run server`)
+- Default authoritative server port: 8082 (configurable via env var - see Configuration)
+
+Notes
+- The authoritative server runs a jsdom instance to load an HTML runner from `server/authoritative_server/`. This allows server-side scripts to exercise the same HTML/JS that the client uses.
+
+## Development workflow
+
+1. Install dependencies (`npm install`).
+2. Start the server (`npm run server` or `node .\server\index.js`).
+3. Open the client in a browser or run automated server-side tests that load the authoritative runner.
+
+If you change client code under `public/`, refresh the browser to pick up changes. If you change server code, restart the server.
+
 
 ## Troubleshooting
 
-- If `node .\server\index.js` exits with an error, read the console stack trace. Common causes:
-  - Missing dependencies: run `npm install`
-  - Port already in use: free the port or change it in `server/index.js`.
+- "Port already in use": stop the process occupying the port or set `PORT` to another value before starting the server:
 
-## Notes
+```powershell
+$env:PORT=3000; node .\server\index.js
+```
 
-- The server uses `jsdom` to run the authoritative Phaser client in a headless DOM; `gameLoaded` in that DOM triggers the HTTP server to start listening.
-- If you want the server to start immediately without waiting for the DOM event, modify `server/index.js` to call `server.listen(...)` directly.
-
+- "Missing dependencies": run `npm install` and ensure there are no install errors.
+- Check the console logs produced by `server/index.js` for stack traces and helpful error messages.
 
 ## Controls
 
-- Arrow Keys
+- Arrow keys
   - Left: Turn Left (Counter-Clockwise)
   - Right: Turn Right (Clockwise)
   - Up: Thrust Forward
   - Down: Reverse Thrust
+
+## Contributing
+
+1. Fork the repository and create a feature branch.
+2. Run and test your changes locally.
+3. Open a pull request with a clear description of your changes.
+
+
+

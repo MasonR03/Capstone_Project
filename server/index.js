@@ -49,6 +49,7 @@ io.on('connection', (socket) => {
 
 // ------------------------------
 // Start the server
+// Change the port here if needed
 // ------------------------------
 const PORT = 8082;
 server.listen(PORT, () => {
