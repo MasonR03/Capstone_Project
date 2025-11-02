@@ -2,6 +2,12 @@ const path = require('path');
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
+// Load environment variables from .env if present
+try {
+  require('dotenv').config();
+} catch (err) {
+  // dotenv not installed or failed to load; proceed using process.env
+}
 
 const app = express();
 const server = http.createServer(app);
@@ -49,8 +55,9 @@ io.on('connection', (socket) => {
 
 // ------------------------------
 // Start the server
+// Read port from environment (or .env). Falls back to 8082.
 // ------------------------------
-const PORT = 8082;
+const PORT = process.env.PORT || 8082;
 server.listen(PORT, () => {
   console.log(`Game server running at http://localhost:${PORT}`);
 });

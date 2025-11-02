@@ -4,67 +4,98 @@ A 2D arcade-style multiplayer space game built with Phaser 3 and Socket.IO.
 
 ## Overview
 
-This repository contains a small multiplayer/Phaser demo with an "authoritative" server-side HTML runner (using jsdom) and client assets.
+This project demonstrates a Phaser 3 based client and an "authoritative" Node.js server runner together with Socket.IO for networking. The authoritative server can host the game logic and serve a headless HTML runner for automated or server-driven gameplay. Pilot a spaceship and collect stars to gain points for your team. More features coming soon!
 
-## Quickstart (PowerShell)
+## Features
 
-1. Install dependencies:
+- Local multiplayer demo using Socket.IO
+- Phaser 3 based client (in `public/`)
+- Authoritative HTML runner (in `server/authoritative_server/`)
+- In-game debug display
 
-```powershell
-npm install
-```
+## Tech stack
 
-2. Start the server:
+- Node.js (server runtime)
+- npm (package management)
+- Express (static assets / minimal HTTP server)
+- Socket.IO (real-time networking)
+- Phaser 3 (game engine)
+- jsdom (used by the server runner)
 
-```powershell
-node .\server\index.js
-```
+## Getting started
 
-Or
+1. Prerequisites
+  - Node.js 14+
+  - npm (bundled with Node.js)
 
-```powershell
-npm run dev
-```
+2. Install dependencies
 
-3. Watch the server output. The authoritative server triggers the HTTP listener and will log a message like:
+  ```powershell
+  npm install
+  ```
 
-```
-Listening on 8082
-```
+3. Run the server
 
-When you see that message the server is accepting connections on port 8082.
+  ```powershell
+  npm run server
+  # or
+  node .\server\index.js
+  ```
 
-Note: the server starts listening on port 8082 once the embedded jsdom runner calls `gameLoaded` (see `server/index.js`).
+  - When the server finishes loading it will log a message such as:
 
-## Project layout
+  ```
+  Game server running at http://localhost:[PORT]
+  ```
 
-- `server/` - server-side code and the authoritative server HTML
-  - `server/index.js` - Express + jsdom runner + socket.io setup (listens on port 8082 after game load)
-  - `server/authoritative_server/` - authoritative HTML and assets used by the jsdom runner
-- `public/` - client-facing static build (browser-playable client)
-- `package.json` - project dependencies and scripts
-- `.gitignore` - repository ignores
 
-## Ports
+4. Visit the client
+  - Open your browser and point to the port specified, for example:
 
-- Authoritative server: 8082 (server logs this when ready).
+  ```
+  http://localhost:[PORT]
+  ```
+
 
 ## Troubleshooting
 
-- If `node .\server\index.js` exits with an error, read the console stack trace. Common causes:
-  - Missing dependencies: run `npm install`
-  - Port already in use: free the port or change it in `server/index.js`.
+  - Configure the port via an environment variable or a `.env` file
 
-## Notes
+  - Create a `.env` file in the project root with a `PORT` value (an example `.env` is included):
 
-- The server uses `jsdom` to run the authoritative Phaser client in a headless DOM; `gameLoaded` in that DOM triggers the HTTP server to start listening.
-- If you want the server to start immediately without waiting for the DOM event, modify `server/index.js` to call `server.listen(...)` directly.
+  ```text
+  PORT=3000
+  ```
 
+  - The server will read `PORT` from the environment, so you can also start the server with an inline environment variable (PowerShell example):
+
+  ```powershell
+  $env:PORT=3000; npm run server
+  # or
+  $env:PORT=3000; node .\server\index.js
+  ```
+
+- "Missing dependencies": run `npm install` and ensure there are no install errors.
 
 ## Controls
 
-- Arrow Keys
+- Arrow keys
   - Left: Turn Left (Counter-Clockwise)
   - Right: Turn Right (Clockwise)
   - Up: Thrust Forward
   - Down: Reverse Thrust
+
+## Contributing
+
+1. Fork the repository and create a feature branch.
+2. Run and test your changes locally.
+3. Open a pull request with a clear description of your changes.
+
+## Development workflow
+
+1. Install dependencies (`npm install`).
+2. Start the server (`npm run server` or `node .\server\index.js`).
+3. Open the client in a browser or run automated server-side tests that load the authoritative runner.
+
+If you change client code under `public/`, refresh the browser to pick up changes. If you change server code, restart the server.
+
