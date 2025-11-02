@@ -34,7 +34,6 @@ This project demonstrates a Phaser 3 based client and an "authoritative" Node.js
   ```
 
 3. Run the server
-  - Start the server and the HTTP listener using the npm script or Node directly:
 
   ```powershell
   npm run server
@@ -48,7 +47,18 @@ This project demonstrates a Phaser 3 based client and an "authoritative" Node.js
   Game server running at http://localhost:[PORT]
   ```
 
-Configure the port via an environment variable or a `.env` file
+
+4. Visit the client
+  - Open your browser and point to the port specified, for example:
+
+  ```
+  http://localhost:[PORT]
+  ```
+
+
+## Troubleshooting
+
+  - Configure the port via an environment variable or a `.env` file
 
   - Create a `.env` file in the project root with a `PORT` value (an example `.env` is included):
 
@@ -63,22 +73,6 @@ Configure the port via an environment variable or a `.env` file
   # or
   $env:PORT=3000; node .\server\index.js
   ```
-
-4. Visit the client
-  - Open your browser and point to the port specified, for example:
-
-  ```
-  http://localhost:[PORT]
-  ```
-
-
-## Troubleshooting
-
-- "Port already in use": stop the process occupying the port or set `PORT` to another value before starting the server:
-
-```powershell
-$env:PORT=3000; node .\server\index.js
-```
 
 - "Missing dependencies": run `npm install` and ensure there are no install errors.
 
