@@ -11,7 +11,6 @@ This project demonstrates a Phaser 3 based client and an "authoritative" Node.js
 - Local multiplayer demo using Socket.IO
 - Phaser 3 based client (in `public/`)
 - Authoritative HTML runner (in `server/authoritative_server/`) executed via a jsdom-based server runner
-- Simple, moddable codebase intended for learning and prototyping networked gameplay
 
 ## Tech stack
 
@@ -24,19 +23,19 @@ This project demonstrates a Phaser 3 based client and an "authoritative" Node.js
 
 ## Getting started
 
-Prerequisites
-- Node.js 14+ (LTS recommended)
+1. Prerequisites
+- Node.js 14+
 - npm (bundled with Node.js)
 
-Install dependencies
+2. Install dependencies
 
 ```powershell
 npm install
 ```
 
-Run the server
+3. Run the server
 
-Start the authoritative server and the HTTP listener using the npm script or Node directly:
+Start the server and the HTTP listener using the npm script or Node directly:
 
 ```powershell
 npm run server
@@ -50,7 +49,7 @@ When the server finishes loading it will log a message such as:
 Listening on 8082
 ```
 
-Visit the client
+4. Visit the client
 
 Open your browser and point to the port specified using local host,
 
@@ -58,14 +57,6 @@ Open your browser and point to the port specified using local host,
 http://localhost:[PORT]
 
 ```
-
-## Running the project
-
-- Development server: `node .\server\index.js` (or `npm run server`)
-- Default authoritative server port: 8082 (configurable via env var - see Configuration)
-
-Notes
-- The authoritative server runs a jsdom instance to load an HTML runner from `server/authoritative_server/`. This allows server-side scripts to exercise the same HTML/JS that the client uses.
 
 ## Development workflow
 
