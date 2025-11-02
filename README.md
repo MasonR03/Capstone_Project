@@ -10,7 +10,7 @@ This project demonstrates a Phaser 3 based client and an "authoritative" Node.js
 
 - Local multiplayer demo using Socket.IO
 - Phaser 3 based client (in `public/`)
-- Authoritative HTML runner (in `server/authoritative_server/`) executed via a jsdom-based server runner
+- Authoritative HTML runner (in `server/authoritative_server/`)
 
 ## Tech stack
 
@@ -19,52 +19,41 @@ This project demonstrates a Phaser 3 based client and an "authoritative" Node.js
 - Express (static assets / minimal HTTP server)
 - Socket.IO (real-time networking)
 - Phaser 3 (game engine)
-- jsdom (used by the authoritative server runner)
+- jsdom (used by the server runner)
 
 ## Getting started
 
 1. Prerequisites
-- Node.js 14+
-- npm (bundled with Node.js)
+  - Node.js 14+
+  - npm (bundled with Node.js)
 
 2. Install dependencies
 
-```powershell
-npm install
-```
+  ```powershell
+  npm install
+  ```
 
 3. Run the server
+  - Start the server and the HTTP listener using the npm script or Node directly:
 
-Start the server and the HTTP listener using the npm script or Node directly:
+  ```powershell
+  npm run server
+  # or
+  node .\server\index.js
+  ```
 
-```powershell
-npm run server
-# or
-node .\server\index.js
-```
+  - When the server finishes loading it will log a message such as:
 
-When the server finishes loading it will log a message such as:
-
-```
-Listening on 8082
-```
+  ```
+  Listening on 8082
+  ```
 
 4. Visit the client
+  - Open your browser and point to the port specified, for example:
 
-Open your browser and point to the port specified using local host,
-
-```
-http://localhost:[PORT]
-
-```
-
-## Development workflow
-
-1. Install dependencies (`npm install`).
-2. Start the server (`npm run server` or `node .\server\index.js`).
-3. Open the client in a browser or run automated server-side tests that load the authoritative runner.
-
-If you change client code under `public/`, refresh the browser to pick up changes. If you change server code, restart the server.
+  ```
+  http://localhost:[PORT]
+  ```
 
 
 ## Troubleshooting
@@ -92,5 +81,11 @@ $env:PORT=3000; node .\server\index.js
 2. Run and test your changes locally.
 3. Open a pull request with a clear description of your changes.
 
+## Development workflow
 
+1. Install dependencies (`npm install`).
+2. Start the server (`npm run server` or `node .\server\index.js`).
+3. Open the client in a browser or run automated server-side tests that load the authoritative runner.
+
+If you change client code under `public/`, refresh the browser to pick up changes. If you change server code, restart the server.
 
