@@ -9,8 +9,8 @@ on:
 env:
   IMAGE_NAME: ${{ secrets.DOCKERHUB_USERNAME }}/capstone-project
   CONTAINER_NAME: capstone-app
-  HOST_PORT: 3000
-  CONTAINER_PORT: 3000
+  HOST_PORT: 8082
+  CONTAINER_PORT: 8082
 
 jobs:
   build-and-push:
