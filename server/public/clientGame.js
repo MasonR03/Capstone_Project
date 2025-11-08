@@ -6,11 +6,30 @@ const socket = io({
 // ~~~ Global client state ~~~
 const clientPlayers = {};   // playerId -> Phaser sprite
 let myId = null;            // socket.id for me
+let pendingStarPositions = null; // Store star positions received before scene creation
 
 // Set myId as soon as socket connects
 socket.on('connect', function() {
   myId = socket.id;
   console.log('✅ Connected to server with ID:', myId);
+});
+
+// Set up global handler for stars that works before Phaser scene is created
+socket.on('starsLocation', function (starsInfo) {
+  console.log('📍 Global: Star locations received from server:', starsInfo);
+  if (starSprites && starSprites.length > 0) {
+    // Stars already created, update them directly
+    starsInfo.forEach((star, index) => {
+      if (starSprites[index]) {
+        starSprites[index].setPosition(star.x, star.y);
+        console.log('⭐ Global: Star', star.id, 'updated to position:', star.x, star.y);
+      }
+    });
+  } else {
+    // Stars not created yet, store for later
+    console.log('📌 Global: Storing star positions for when sprites are created');
+    pendingStarPositions = starsInfo;
+  }
 });
 
 // Border buffer distance - how far from edge to stop ships
@@ -30,7 +49,7 @@ let localPlayerStats = {
 // input refs and HUD refs
 let cursors;
 let hpBg, hpFill, xpBg, xpFill, scoreText;
-let starSprite;
+let starSprites = [];  // Array to hold multiple star sprites
 
 // local fallback player (DISABLED for multiplayer - causes double ship issue)
 let localPlayerSprite = null;
@@ -124,11 +143,31 @@ function create() {
   // group of networked players (from server if/when we get them)
   this.playersGroup = this.physics.add.group();
 
-  // create a star sprite (visual only, server handles collection)
-  starSprite = this.add.image(WORLD_W / 2, WORLD_H / 2, 'star');
-  starSprite.setOrigin(0.5, 0.5);
-  starSprite.setDepth(0); // Behind players
-  console.log('⭐ Initial star sprite created at:', starSprite.x, starSprite.y);
+  // create 5 star sprites (visual only, server handles collection)
+  // Initialize at default positions, server will update with actual positions
+  for (let i = 0; i < 5; i++) {
+    const star = this.add.image(
+      WORLD_W / 2 + (i * 100 - 200),  // Spread them out initially
+      WORLD_H / 2,
+      'star'
+    );
+    star.setOrigin(0.5, 0.5);
+    star.setDepth(0); // Behind players
+    starSprites.push(star);
+    console.log('⭐ Initial star', i, 'created at:', star.x, star.y);
+  }
+
+  // If we received star positions before creating sprites (from global handler), apply them now
+  if (pendingStarPositions) {
+    console.log('📍 Applying pending star positions from global handler');
+    pendingStarPositions.forEach((star, index) => {
+      if (starSprites[index]) {
+        starSprites[index].setPosition(star.x, star.y);
+        console.log('⭐ Star', star.id, 'updated to position:', star.x, star.y);
+      }
+    });
+    pendingStarPositions = null;
+  }
 
   // keyboard controls
   cursors = this.input.keyboard.addKeys({
@@ -214,9 +253,11 @@ function create() {
   this.cameras.main.setZoom(1.0);
 
   // ⭐ LOCAL OVERLAP LOGIC ⭐
-  // if local player touches the star, collectStar gets called
-  this.physics.add.overlap(localPlayerSprite, starSprite, () => {
-    collectStar(self);
+  // if local player touches any star, collectStar gets called
+  starSprites.forEach((star, index) => {
+    this.physics.add.overlap(localPlayerSprite, star, () => {
+      collectStar(self, index);
+    });
   });
   */
 
@@ -286,16 +327,9 @@ function create() {
     }
   });
 
+  // Keep backward compatibility for single star updates (if needed)
   socket.on('starLocation', function (starInfo) {
-    // when we get a server starLocation in the future,
-    // trust that instead of local random
-    console.log('📍 Star location received from server:', starInfo);
-    if (starSprite) {
-      starSprite.setPosition(starInfo.x, starInfo.y);
-      console.log('⭐ Star sprite updated to position:', starInfo.x, starInfo.y);
-    } else {
-      console.error('❌ Star sprite not yet created!');
-    }
+    console.log('📍 Single star location received (legacy):', starInfo);
   });
 
   socket.on('updateScore', function (scores) {
@@ -437,14 +471,18 @@ function addOrUpdatePlayerSprite(scene, playerInfo) {
 }
 
 // called when star collection happens (server authoritative)
-function collectStar(scene) {
+// Note: This function is currently not used in multiplayer mode
+// as the server handles all star collection logic
+function collectStar(scene, starIndex) {
   // bump red team score locally
   serverScores.red = (serverScores.red || 0) + 10;
 
   // move star somewhere else in the world (client-side rng for now)
   const newX = Phaser.Math.Between(50, WORLD_W - 50);
   const newY = Phaser.Math.Between(50, WORLD_H - 50);
-  starSprite.setPosition(newX, newY);
+  if (starSprites[starIndex]) {
+    starSprites[starIndex].setPosition(newX, newY);
+  }
 
   // could also award XP/HP here if you want:
   localPlayerStats.xp = Math.min(

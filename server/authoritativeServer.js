@@ -9,11 +9,17 @@ const BORDER_BUFFER = 20;
 // Game state
 const gameState = {
   scores: { red: 0, blue: 0 },
-  star: {
+  stars: []
+};
+
+// Initialize 5 stars at random positions
+for (let i = 0; i < 5; i++) {
+  gameState.stars.push({
+    id: i,
     x: Math.floor(Math.random() * (WORLD_WIDTH - 100)) + 50,
     y: Math.floor(Math.random() * (WORLD_HEIGHT - 100)) + 50
-  }
-};
+  });
+}
 
 function removeStalePlayers(io) {
   const activeSockets = io?.sockets?.sockets;
@@ -33,7 +39,7 @@ function removeStalePlayers(io) {
 
 function initializeServer(io) {
   console.log('✅ Initializing authoritative server...');
-  console.log('⭐ Initial star position:', gameState.star);
+  console.log('⭐ Initial star positions:', gameState.stars);
 
   // Handle client connections
   io.on('connection', (socket) => {
@@ -64,8 +70,8 @@ function initializeServer(io) {
 
     // Send current state to new player
     socket.emit('currentPlayers', players);
-    console.log('📤 Sending star location to new player:', gameState.star);
-    socket.emit('starLocation', gameState.star);
+    console.log('📤 Sending star locations to new player:', gameState.stars);
+    socket.emit('starsLocation', gameState.stars);
     socket.emit('updateScore', gameState.scores);
 
     // Notify others
@@ -204,36 +210,38 @@ function updateGame(io, frameCount) {
       player.velocityY = 0;
     }
 
-    // Check star collision (simple distance check)
-    const dx = player.x - gameState.star.x;
-    const dy = player.y - gameState.star.y;
-    const distance = Math.sqrt(dx * dx + dy * dy);
+    // Check collision with all stars
+    gameState.stars.forEach((star, starIndex) => {
+      const dx = player.x - star.x;
+      const dy = player.y - star.y;
+      const distance = Math.sqrt(dx * dx + dy * dy);
 
-    // Debug: Log when player is close to star
-    if (distance < 100 && frameCount % 30 === 0) {
-      console.log('🎯 Player', player.playerId.substring(0, 8),
-                  'near star! Distance:', Math.round(distance),
-                  'Player:', Math.round(player.x), Math.round(player.y),
-                  'Star:', gameState.star.x, gameState.star.y);
-    }
+      // Debug: Log when player is close to any star
+      if (distance < 100 && frameCount % 30 === 0) {
+        console.log('🎯 Player', player.playerId.substring(0, 8),
+                    'near star', star.id, '! Distance:', Math.round(distance),
+                    'Player:', Math.round(player.x), Math.round(player.y),
+                    'Star:', star.x, star.y);
+      }
 
-    if (distance < 30) {
-      // Player collected the star
-      console.log('⭐⭐⭐ STAR COLLECTED by', player.playerId, '! Team:', player.team);
-      gameState.scores[player.team] += 10;
+      if (distance < 30) {
+        // Player collected a star
+        console.log('⭐⭐⭐ STAR', star.id, 'COLLECTED by', player.playerId, '! Team:', player.team);
+        gameState.scores[player.team] += 10;
 
-      // Move star
-      const oldPos = { x: gameState.star.x, y: gameState.star.y };
-      gameState.star.x = Math.floor(Math.random() * (WORLD_WIDTH - 100)) + 50;
-      gameState.star.y = Math.floor(Math.random() * (WORLD_HEIGHT - 100)) + 50;
-      console.log('⭐ Star moved from', oldPos, 'to', gameState.star);
+        // Move this star to a new random position
+        const oldPos = { x: star.x, y: star.y };
+        star.x = Math.floor(Math.random() * (WORLD_WIDTH - 100)) + 50;
+        star.y = Math.floor(Math.random() * (WORLD_HEIGHT - 100)) + 50;
+        console.log('⭐ Star', star.id, 'moved from', oldPos, 'to', { x: star.x, y: star.y });
 
-      // Broadcast
-      console.log('📡 Broadcasting score update:', gameState.scores);
-      io.emit('updateScore', gameState.scores);
-      console.log('📡 Broadcasting new star location:', gameState.star);
-      io.emit('starLocation', gameState.star);
-    }
+        // Broadcast updates
+        console.log('📡 Broadcasting score update:', gameState.scores);
+        io.emit('updateScore', gameState.scores);
+        console.log('📡 Broadcasting new star locations:', gameState.stars);
+        io.emit('starsLocation', gameState.stars);
+      }
+    });
   });
 
   // Broadcast player updates
