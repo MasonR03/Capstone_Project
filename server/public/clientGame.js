@@ -88,14 +88,17 @@ function create() {
   this.debugGridGraphics.setDepth(-1); // Behind everything else
   this.debugGridGraphics.setVisible(false); // Hidden by default
 
-  // Initialize debug tools if running locally
+  // Initialize debug tools
   DebugTools.init(game, () => {
-    // Callback to get current player
+    // Callback to get current player and all players
     if (myId && clientPlayers[myId]) {
-      return { player: clientPlayers[myId] };
+      return {
+        player: clientPlayers[myId],
+        allPlayers: clientPlayers
+      };
     }
     // No local sprite in multiplayer mode
-    return null;
+    return { allPlayers: clientPlayers };
   }, this.debugGridGraphics);
 
   // physics world size

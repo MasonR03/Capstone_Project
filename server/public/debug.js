@@ -25,19 +25,34 @@ const DebugTools = (() => {
     getPlayerCallback = getPlayer;
     debugGridGraphics = gridGraphics;
 
-    // Only show debug tools if running locally
-    if (!isRunningLocally()) return;
-
+    // Show debug tools on all clients (removed local restriction)
     const debugButton = document.getElementById('debug-button');
     const debugPanel = document.getElementById('debug-panel');
 
     // Show the debug button
     debugButton.style.display = 'block';
 
+    // Check localStorage for saved debug panel state
+    const savedDebugState = localStorage.getItem('debugPanelVisible');
+    if (savedDebugState === 'true') {
+      debugPanelVisible = true;
+      debugPanel.style.display = 'block';
+
+      // Enable gridlines if they were visible
+      if (debugGridGraphics) {
+        debugGridGraphics.setVisible(true);
+      }
+
+      startPositionUpdates();
+    }
+
     // Toggle debug panel on button click
     debugButton.addEventListener('click', () => {
       debugPanelVisible = !debugPanelVisible;
       debugPanel.style.display = debugPanelVisible ? 'block' : 'none';
+
+      // Save state to localStorage
+      localStorage.setItem('debugPanelVisible', debugPanelVisible.toString());
 
       // Toggle gridlines visibility
       if (debugGridGraphics) {
@@ -95,6 +110,7 @@ const DebugTools = (() => {
     const camXElement = document.getElementById('cam-x');
     const camYElement = document.getElementById('cam-y');
     const velocityElement = document.getElementById('velocity');
+    const playerCountElement = document.getElementById('player-count');
 
     // Get the active scene
     const scene = gameInstance?.scene?.scenes?.[0];
@@ -111,6 +127,14 @@ const DebugTools = (() => {
 
     // Get player from callback
     const playerInfo = getPlayerCallback ? getPlayerCallback() : null;
+
+    // Update player count
+    if (playerInfo && playerInfo.allPlayers) {
+      const playerCount = Object.keys(playerInfo.allPlayers).length;
+      playerCountElement.textContent = playerCount;
+    } else {
+      playerCountElement.textContent = '0';
+    }
 
     if (playerInfo && playerInfo.player) {
       const player = playerInfo.player;
