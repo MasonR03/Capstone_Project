@@ -15,11 +15,28 @@ const gameState = {
   }
 };
 
+function removeStalePlayers(io) {
+  const activeSockets = io?.sockets?.sockets;
+  if (!activeSockets) {
+    return;
+  }
+
+  const activeIds = new Set(activeSockets.keys());
+  Object.keys(players).forEach((playerId) => {
+    if (!activeIds.has(playerId)) {
+      console.warn('🧹 Removing stale player without active socket:', playerId);
+      delete players[playerId];
+      io.emit('playerDisconnected', playerId);
+    }
+  });
+}
+
 function initializeServer(io) {
   console.log('✅ Initializing authoritative server...');
 
   // Handle client connections
   io.on('connection', (socket) => {
+    removeStalePlayers(io);
     console.log('🎮 User connected:', socket.id);
 
     // Create player
@@ -39,7 +56,9 @@ function initializeServer(io) {
       maxXp: 100
     };
 
+    const activeSocketCount = io.sockets?.sockets?.size ?? 0;
     console.log('📊 Total active players:', Object.keys(players).length);
+    console.log('🔌 Active sockets:', activeSocketCount);
     console.log('📋 Player IDs:', Object.keys(players));
 
     // Send current state to new player
@@ -78,6 +97,9 @@ function initializeServer(io) {
 
       // Notify all clients
       io.emit('playerDisconnected', socket.id);
+
+      // Sweep any lingering players whose sockets are gone
+      removeStalePlayers(io);
     });
   });
 
@@ -92,6 +114,10 @@ function initializeServer(io) {
 }
 
 function updateGame(io, frameCount) {
+  if (frameCount % 60 === 0) {
+    removeStalePlayers(io);
+  }
+
   // Update each player
   Object.values(players).forEach((player, index) => {
     // Debug log every second for ALL players
