@@ -7,6 +7,12 @@ const socket = io({
 const clientPlayers = {};   // playerId -> Phaser sprite
 let myId = null;            // socket.id for me
 
+// Set myId as soon as socket connects
+socket.on('connect', function() {
+  myId = socket.id;
+  console.log('✅ Connected to server with ID:', myId);
+});
+
 // Border buffer distance - how far from edge to stop ships
 const BORDER_BUFFER = 20;
 
@@ -26,8 +32,8 @@ let cursors;
 let hpBg, hpFill, xpBg, xpFill, scoreText;
 let starSprite;
 
-// local fallback player (for offline / no-authority mode)
-let localPlayerSprite;
+// local fallback player (DISABLED for multiplayer - causes double ship issue)
+let localPlayerSprite = null;
 
 // world bounds we'll reuse
 const WORLD_W = 2000;
@@ -58,9 +64,19 @@ const game = new Phaser.Game(clientConfig);
 
 // ~~~ Preload ~~~
 function preload() {
+  console.log('Preloading assets...');
+
   this.load.image('ship', 'assets/spaceShips_001.png');
   this.load.image('star', 'assets/star_gold.png');
   // this.load.image('otherPlayer', 'assets/enemyBlack5.png'); // optional
+
+  this.load.on('complete', () => {
+    console.log('Assets loaded successfully');
+  });
+
+  this.load.on('loaderror', (file) => {
+    console.error('Error loading asset:', file.key, file.url);
+  });
 }
 
 // ~~~ Create ~~~
@@ -77,9 +93,8 @@ function create() {
     // Callback to get current player
     if (myId && clientPlayers[myId]) {
       return { player: clientPlayers[myId] };
-    } else if (localPlayerSprite) {
-      return { player: localPlayerSprite };
     }
+    // No local sprite in multiplayer mode
     return null;
   }, this.debugGridGraphics);
 
@@ -106,11 +121,10 @@ function create() {
   // group of networked players (from server if/when we get them)
   this.playersGroup = this.physics.add.group();
 
-  // create a star sprite IN PHYSICS so we can overlap it
-  starSprite = this.physics.add
-    .image(WORLD_W / 2, WORLD_H / 2, 'star')
-    .setCircle(12) // shrink hit area if you want tighter pickup
-    .setOrigin(0.5, 0.5);
+  // create a star sprite (visual only, server handles collection)
+  starSprite = this.add.image(WORLD_W / 2, WORLD_H / 2, 'star');
+  starSprite.setOrigin(0.5, 0.5);
+  starSprite.setDepth(0); // Behind players
 
   // keyboard controls
   cursors = this.input.keyboard.addKeys({
@@ -177,6 +191,11 @@ function create() {
   });
 
   // ~~~ LOCAL FALLBACK PLAYER ~~~
+  // DISABLED for multiplayer - local sprite causes double ship issue
+  // The server handles all physics and we only display authoritative sprites
+
+  // Uncomment below only for offline/local play:
+  /*
   localPlayerSprite = this.physics.add
     .image(WORLD_W / 2 + 100, WORLD_H / 2, 'ship')
     .setOrigin(0.5, 0.5)
@@ -195,29 +214,61 @@ function create() {
   this.physics.add.overlap(localPlayerSprite, starSprite, () => {
     collectStar(self);
   });
+  */
+
+  // For multiplayer, camera will follow authoritative sprite when it's created
+  // Set initial camera position to center of world while waiting for player
+  this.cameras.main.centerOn(WORLD_W / 2, WORLD_H / 2);
+  this.cameras.main.setZoom(1.0);
+
+  // Add a test rectangle to ensure rendering is working
+  const testRect = this.add.rectangle(WORLD_W / 2, WORLD_H / 2 - 100, 100, 100, 0x00ff00);
+  testRect.setStrokeStyle(2, 0xffffff);
+  console.log('Test rectangle added at world center:', testRect.x, testRect.y);
 
   // ~~~ SOCKET HANDLERS ~~~
   socket.on('currentPlayers', function (players) {
+    // Use socket.id directly if myId isn't set yet
+    if (!myId) {
+      myId = socket.id;
+      console.log('Setting myId from socket.id:', myId);
+    }
+
+    console.log('Received currentPlayers event with', Object.keys(players).length, 'players');
+    console.log('My socket ID is:', myId, 'Socket.id is:', socket.id);
+    console.log('Player IDs received:', Object.keys(players));
+
     Object.keys(players).forEach(function (id) {
-      addOrUpdatePlayerSprite(self, players[id]);
+      // Create/update sprites for all players
+      const sprite = addOrUpdatePlayerSprite(self, players[id]);
 
-      if (id === socket.id) {
-        myId = id;
+      // If this is our player, set up camera follow (check both myId and socket.id)
+      if (id === myId || id === socket.id) {
+        console.log('Found my player! Setting camera to follow:', id);
+        myId = id; // Ensure myId is set
 
-        // switch camera to authoritative sprite and kill fallback
-        if (localPlayerSprite) {
-          localPlayerSprite.destroy();
-          localPlayerSprite = null;
+        if (sprite) {
+          self.cameras.main.startFollow(sprite, true, 0.1, 0.1);
+          console.log('Camera now following sprite at:', sprite.x, sprite.y);
+        } else {
+          console.error('ERROR: Could not find sprite for camera follow!');
         }
-
-        self.cameras.main.startFollow(
-          clientPlayers[myId],
-          true,
-          0.1,
-          0.1
-        );
       }
     });
+
+    // Double-check we found our player
+    if (!clientPlayers[myId] && !clientPlayers[socket.id]) {
+      console.warn('WARNING: Did not find our player in currentPlayers!');
+      console.warn('Our ID:', myId, 'Socket ID:', socket.id);
+      console.warn('Available IDs:', Object.keys(clientPlayers));
+
+      // Fallback: follow the first player if we can't find ours
+      const firstPlayerId = Object.keys(clientPlayers)[0];
+      if (firstPlayerId) {
+        console.log('Fallback: Following first available player:', firstPlayerId);
+        self.cameras.main.startFollow(clientPlayers[firstPlayerId], true, 0.1, 0.1);
+      }
+    }
   });
 
   socket.on('newPlayer', function (playerInfo) {
@@ -243,17 +294,47 @@ function create() {
   });
 
   socket.on('playerUpdates', function (serverPlayers) {
+    // Log periodically to avoid spam
+    if (!self.lastUpdateLog || Date.now() - self.lastUpdateLog > 1000) {
+      console.log('playerUpdates: Updating', Object.keys(serverPlayers).length, 'players');
+      console.log('My ID is:', myId, 'Socket.id is:', socket.id);
+      console.log('Player IDs from server:', Object.keys(serverPlayers));
+      self.lastUpdateLog = Date.now();
+    }
+
     Object.keys(serverPlayers).forEach(function (id) {
       const serverP = serverPlayers[id];
 
+      // Create sprite if it doesn't exist (handles late-joining players)
       if (!clientPlayers[id]) {
+        console.log('Late player join detected, creating sprite for:', id);
         addOrUpdatePlayerSprite(self, serverP);
+
+        // Check if this is our player and set camera
+        if (id === socket.id && !self.cameraSet) {
+          console.log('This is MY player! Setting camera to follow:', id);
+          self.cameras.main.startFollow(clientPlayers[id], true, 0.1, 0.1);
+          self.cameraSet = true;
+          myId = id;
+        }
       }
 
-      const sprite = clientPlayers[id];
-      sprite.setPosition(serverP.x, serverP.y);
-      sprite.setRotation(serverP.rotation);
+      // Update all sprites with server authoritative positions
+      if (clientPlayers[id]) {
+        const sprite = clientPlayers[id];
+        // Server is the single source of truth for positions
+        sprite.x = serverP.x;
+        sprite.y = serverP.y;
+        sprite.rotation = serverP.rotation;
 
+        // Make sure sprite stays visible
+        if (!sprite.visible) {
+          console.warn('Sprite was invisible, making visible:', id);
+          sprite.setVisible(true);
+        }
+      }
+
+      // Update local HUD stats for our player
       if (id === myId) {
         // authoritative HUD stats
         if (serverP.hp !== undefined)    localPlayerStats.hp = serverP.hp;
@@ -267,76 +348,20 @@ function create() {
 
 // ~~~ Update ~~~
 function update(time, delta) {
-  // LOCAL MOVEMENT for fallback player:
-  if (localPlayerSprite) {
-    const body = localPlayerSprite.body;
+  // LOCAL MOVEMENT DISABLED for multiplayer
+  // Server handles all physics - client only sends input and displays results
+  // This prevents the double ship issue where local and server ships were both rendered
 
-    // turn
-    if (cursors.left.isDown) {
-      body.angularVelocity = -300;
-    } else if (cursors.right.isDown) {
-      body.angularVelocity = 300;
-    } else {
-      body.angularVelocity = 0;
-    }
-
-    // thrust forward
-    if (cursors.up.isDown) {
-      this.physics.velocityFromRotation(
-        localPlayerSprite.rotation + 1.5,
-        200,
-        body.acceleration
-      );
-    }
-    // reverse thruster - decelerate to zero
-    else if (cursors.down.isDown) {
-      // Apply deceleration proportional to current velocity
-      const currentVel = body.velocity.length();
-      if (currentVel > 50) {
-        // Normal deceleration for higher speeds
-        const decelX = -body.velocity.x * 0.1;
-        const decelY = -body.velocity.y * 0.1;
-        body.setAcceleration(decelX * 10, decelY * 10);
-      } else if (currentVel > 5) {
-        // Aggressive deceleration when below 50 velocity
-        const decelX = -body.velocity.x * 0.3;
-        const decelY = -body.velocity.y * 0.3;
-        body.setAcceleration(decelX * 10, decelY * 10);
-      } else {
-        // When nearly stopped, set velocity to zero
-        body.setVelocity(0, 0);
-        body.setAcceleration(0, 0);
-      }
-    } else {
-      localPlayerSprite.setAcceleration(0);
-    }
-
-    // clamp to world bounds (with buffer from edge)
-    if (localPlayerSprite.x < BORDER_BUFFER) {
-      localPlayerSprite.x = BORDER_BUFFER;
-      localPlayerSprite.setVelocityX(0);
-    } else if (localPlayerSprite.x > WORLD_W - BORDER_BUFFER) {
-      localPlayerSprite.x = WORLD_W - BORDER_BUFFER;
-      localPlayerSprite.setVelocityX(0);
-    }
-
-    if (localPlayerSprite.y < BORDER_BUFFER) {
-      localPlayerSprite.y = BORDER_BUFFER;
-      localPlayerSprite.setVelocityY(0);
-    } else if (localPlayerSprite.y > WORLD_H - BORDER_BUFFER) {
-      localPlayerSprite.y = WORLD_H - BORDER_BUFFER;
-      localPlayerSprite.setVelocityY(0);
-    }
+  // SEND INPUT STATE TO SERVER (only when connected with valid ID)
+  if (myId && socket.connected) {
+    const inputPayload = {
+      left: cursors.left.isDown,
+      right: cursors.right.isDown,
+      up: cursors.up.isDown,
+      down: cursors.down.isDown
+    };
+    socket.emit('playerInput', inputPayload);
   }
-
-  // SEND INPUT STATE TO SERVER (future authoritative mode)
-  const inputPayload = {
-    left: cursors.left.isDown,
-    right: cursors.right.isDown,
-    up: cursors.up.isDown,
-    down: cursors.down.isDown
-  };
-  socket.emit('playerInput', inputPayload);
 
   // HUD UPDATE
   const hpPct = safeDiv(localPlayerStats.hp, localPlayerStats.maxHp);
@@ -356,28 +381,52 @@ function addOrUpdatePlayerSprite(scene, playerInfo) {
   let sprite = clientPlayers[playerInfo.playerId];
 
   if (!sprite) {
-    sprite = scene.physics.add
-      .image(playerInfo.x, playerInfo.y, 'ship')
-      .setOrigin(0.5, 0.5)
-      .setDisplaySize(53, 40);
+    console.log('Creating sprite for player:', playerInfo.playerId, 'at', playerInfo.x, playerInfo.y);
 
-    // tint by team if you want
-    if (playerInfo.team === 'red') {
-      sprite.setTint(0xff4444);
-    } else if (playerInfo.team === 'blue') {
-      sprite.setTint(0x4444ff);
+    try {
+      // Try to use the ship texture
+      if (scene.textures.exists('ship')) {
+        sprite = scene.add.sprite(playerInfo.x, playerInfo.y, 'ship');
+        sprite.setDisplaySize(53, 40);
+        console.log('Ship texture loaded successfully');
+      } else {
+        // Fallback: create a colored rectangle if texture not found
+        console.warn('Ship texture not found, using fallback rectangle');
+        sprite = scene.add.rectangle(playerInfo.x, playerInfo.y, 53, 40);
+      }
+
+      sprite.setOrigin(0.5, 0.5);
+
+      // tint by team
+      if (playerInfo.team === 'red') {
+        sprite.setTint(0xff4444);
+      } else if (playerInfo.team === 'blue') {
+        sprite.setTint(0x4444ff);
+      }
+
+      // Make sure sprite is visible
+      sprite.setVisible(true);
+      sprite.setDepth(1);
+      sprite.setActive(true);
+
+      clientPlayers[playerInfo.playerId] = sprite;
+
+      // Set initial position and rotation
+      sprite.x = playerInfo.x;
+      sprite.y = playerInfo.y;
+      sprite.rotation = playerInfo.rotation || 0;
+
+      console.log('Sprite created successfully for:', playerInfo.playerId, 'Sprite object:', sprite);
+    } catch (error) {
+      console.error('Error creating sprite:', error);
     }
-
-    clientPlayers[playerInfo.playerId] = sprite;
   }
-
-  sprite.setPosition(playerInfo.x, playerInfo.y);
-  sprite.setRotation(playerInfo.rotation);
+  // Position updates will happen in playerUpdates handler
 
   return sprite;
 }
 
-// called when we overlap localPlayerSprite with starSprite
+// called when star collection happens (server authoritative)
 function collectStar(scene) {
   // bump red team score locally
   serverScores.red = (serverScores.red || 0) + 10;
