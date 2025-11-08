@@ -128,6 +128,7 @@ function create() {
   starSprite = this.add.image(WORLD_W / 2, WORLD_H / 2, 'star');
   starSprite.setOrigin(0.5, 0.5);
   starSprite.setDepth(0); // Behind players
+  console.log('⭐ Initial star sprite created at:', starSprite.x, starSprite.y);
 
   // keyboard controls
   cursors = this.input.keyboard.addKeys({
@@ -288,7 +289,13 @@ function create() {
   socket.on('starLocation', function (starInfo) {
     // when we get a server starLocation in the future,
     // trust that instead of local random
-    starSprite.setPosition(starInfo.x, starInfo.y);
+    console.log('📍 Star location received from server:', starInfo);
+    if (starSprite) {
+      starSprite.setPosition(starInfo.x, starInfo.y);
+      console.log('⭐ Star sprite updated to position:', starInfo.x, starInfo.y);
+    } else {
+      console.error('❌ Star sprite not yet created!');
+    }
   });
 
   socket.on('updateScore', function (scores) {

@@ -33,6 +33,7 @@ function removeStalePlayers(io) {
 
 function initializeServer(io) {
   console.log('✅ Initializing authoritative server...');
+  console.log('⭐ Initial star position:', gameState.star);
 
   // Handle client connections
   io.on('connection', (socket) => {
@@ -63,6 +64,7 @@ function initializeServer(io) {
 
     // Send current state to new player
     socket.emit('currentPlayers', players);
+    console.log('📤 Sending star location to new player:', gameState.star);
     socket.emit('starLocation', gameState.star);
     socket.emit('updateScore', gameState.scores);
 
@@ -207,16 +209,29 @@ function updateGame(io, frameCount) {
     const dy = player.y - gameState.star.y;
     const distance = Math.sqrt(dx * dx + dy * dy);
 
+    // Debug: Log when player is close to star
+    if (distance < 100 && frameCount % 30 === 0) {
+      console.log('🎯 Player', player.playerId.substring(0, 8),
+                  'near star! Distance:', Math.round(distance),
+                  'Player:', Math.round(player.x), Math.round(player.y),
+                  'Star:', gameState.star.x, gameState.star.y);
+    }
+
     if (distance < 30) {
       // Player collected the star
+      console.log('⭐⭐⭐ STAR COLLECTED by', player.playerId, '! Team:', player.team);
       gameState.scores[player.team] += 10;
 
       // Move star
+      const oldPos = { x: gameState.star.x, y: gameState.star.y };
       gameState.star.x = Math.floor(Math.random() * (WORLD_WIDTH - 100)) + 50;
       gameState.star.y = Math.floor(Math.random() * (WORLD_HEIGHT - 100)) + 50;
+      console.log('⭐ Star moved from', oldPos, 'to', gameState.star);
 
       // Broadcast
+      console.log('📡 Broadcasting score update:', gameState.scores);
       io.emit('updateScore', gameState.scores);
+      console.log('📡 Broadcasting new star location:', gameState.star);
       io.emit('starLocation', gameState.star);
     }
   });

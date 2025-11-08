@@ -61,7 +61,7 @@ function create() {
   this.physics.add.collider(this.players);
 
   // detect when a player overlaps (touches) the star
-  this.physics.add.overlap(this.players, this.star, function (star, player) {
+  this.physics.add.overlap(this.players, this.star, function (player, star) {
     // add score to that player's team
     if (players[player.playerId].team === 'red') {
       self.scores.red += 10;
