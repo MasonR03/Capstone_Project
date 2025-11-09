@@ -270,7 +270,7 @@ function create() {
   const testRect = this.add.rectangle(WORLD_W / 2, WORLD_H / 2, 100, 100, 0x000080);
   testRect.setStrokeStyle(2, 0xffffff);
   console.log('Test rectangle added at world center:', testRect.x, testRect.y);
-  //write word 'center' on rectangle
+  // Write word 'center' on rectangle.
   const centerText = this.add.text(testRect.x, testRect.y, 'CENTER', {
     fontSize: '16px',
     fill: '#ffffff',
