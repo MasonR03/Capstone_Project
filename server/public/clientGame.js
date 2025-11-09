@@ -187,7 +187,7 @@ function create() {
     200,
     20,
     0x222222
-  ).setScrollFactor(0);
+  ).setScrollFactor(0).setDepth(100);
 
   hpFill = this.add.rectangle(
     cx,
@@ -195,7 +195,7 @@ function create() {
     200,
     20,
     0xff3333
-  ).setScrollFactor(0);
+  ).setScrollFactor(0).setDepth(101);
 
   xpBg = this.add.rectangle(
     cx,
@@ -203,7 +203,7 @@ function create() {
     200,
     10,
     0x222222
-  ).setScrollFactor(0);
+  ).setScrollFactor(0).setDepth(100);
 
   xpFill = this.add.rectangle(
     cx,
@@ -211,7 +211,7 @@ function create() {
     200,
     10,
     0x00ccff
-  ).setScrollFactor(0);
+  ).setScrollFactor(0).setDepth(101);
 
   scoreText = this.add.text(
     20,
@@ -222,7 +222,7 @@ function create() {
       fill: '#ffffff',
       fontFamily: 'monospace'
     }
-  ).setScrollFactor(0);
+  ).setScrollFactor(0).setDepth(100);
 
   // fullscreen toggle with F
   this.input.keyboard.on('keydown-F', () => {
