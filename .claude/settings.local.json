@@ -3,7 +3,8 @@
     "allow": [
       "Bash(node server/index.js:*)",
       "Bash(taskkill:*)",
-      "Bash(nul)"
+      "Bash(nul)",
+      "WebFetch(domain:github.com)"
     ],
     "deny": [],
     "ask": []
