@@ -10,7 +10,7 @@ try {
 }
 
 // Import the authoritative server
-const { initializeServer } = require('./authoritativeServer');
+const { initializeServer } = require('./authoritative_server/js/game');
 
 const app = express();
 const server = http.createServer(app);

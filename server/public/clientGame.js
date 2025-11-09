@@ -267,9 +267,16 @@ function create() {
   this.cameras.main.setZoom(1.0);
 
   // Add a test rectangle to ensure rendering is working
-  const testRect = this.add.rectangle(WORLD_W / 2, WORLD_H / 2 - 100, 100, 100, 0x00ff00);
+  const testRect = this.add.rectangle(WORLD_W / 2, WORLD_H / 2, 100, 100, 0x000080);
   testRect.setStrokeStyle(2, 0xffffff);
   console.log('Test rectangle added at world center:', testRect.x, testRect.y);
+  //write word 'center' on rectangle
+  const centerText = this.add.text(testRect.x, testRect.y, 'CENTER', {
+    fontSize: '16px',
+    fill: '#ffffff',
+    fontFamily: 'monospace'
+  });
+  centerText.setOrigin(0.5, 0.5);
 
   // ~~~ SOCKET HANDLERS ~~~
   socket.on('currentPlayers', function (players) {
