@@ -9,6 +9,9 @@ try {
   // dotenv not installed or failed to load; proceed using process.env
 }
 
+// Import the authoritative server
+const { initializeServer } = require('./authoritative_server/js/game');
+
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
@@ -38,20 +41,9 @@ app.get('/', (req, res) => {
 });
 
 // ------------------------------
-// Socket.IO events
+// Initialize the authoritative game server
 // ------------------------------
-io.on('connection', (socket) => {
-  console.log('A user connected:', socket.id);
-
-  socket.on('disconnect', () => {
-    console.log('User disconnected:', socket.id);
-  });
-
-  // Example: broadcast movement or actions
-  socket.on('playerMove', (data) => {
-    socket.broadcast.emit('playerMove', data);
-  });
-});
+initializeServer(io);
 
 // ------------------------------
 // Start the server

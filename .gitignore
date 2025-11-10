@@ -50,4 +50,7 @@ temp/
 # Optional for editors that create swap files
 *.swp
 
+
+nul
+
 # End of file

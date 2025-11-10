@@ -1,261 +1,312 @@
-// ~~~ Server authoritative state ~~~
-// Keeps track of all connected players by socket id
-const players = {};
+// Authoritative server using arcade-physics instead of Phaser headless (less overhead)
+// Uses arcade-physics package for proper physics simulation and Socket.IO for multiplayer
 
-// Border buffer distance - how far from edge to stop ships
+const { ArcadePhysics } = require('arcade-physics');
+
+const players = {};
+const WORLD_WIDTH = 2000;
+const WORLD_HEIGHT = 2000;
 const BORDER_BUFFER = 20;
 
-// ~~~ Phaser server config ~~~
-// This Phaser instance runs in jsdom with HEADLESS mode.
-// It simulates physics and game rules and broadcasts state to clients.
-// Rendering / HUD happens in the browser client, not here.
-const config = {
-  type: Phaser.HEADLESS,           // no rendering, just logic and physics
-  parent: 'phaser-example',
-  width: 800,                      // world width (you can grow this later)
-  height: 600,                     // world height
-  physics: {
-    default: 'arcade',
-    arcade: {
-      debug: false,
-      gravity: { y: 0 }            // top-down, zero gravity
-    }
-  },
-  scene: {
-    preload: preload,
-    create: create,
-    update: update
-  },
-  autoFocus: false
+// Game state
+const gameState = {
+  scores: { red: 0, blue: 0 },
+  stars: []
 };
 
-// ~~~ Preload ~~~
-// Load assets so Phaser knows their sizes for physics bodies.
-// Even headless Phaser still uses frame data for body size.
-function preload() {
-  this.load.image('ship', 'assets/spaceShips_001.png');
-  this.load.image('star', 'assets/star_gold.png');
+// Physics world
+let physics = null;
+const playerBodies = new Map(); // Map socket.id -> Body
+const starBodies = [];
+
+// Initialize 5 stars at random positions
+for (let i = 0; i < 5; i++) {
+  gameState.stars.push({
+    id: i,
+    x: Math.floor(Math.random() * (WORLD_WIDTH - 100)) + 50,
+    y: Math.floor(Math.random() * (WORLD_HEIGHT - 100)) + 50
+  });
 }
 
-// ~~~ Create ~~~
-function create() {
-  const self = this;
+function removeStalePlayers(io) {
+  const activeSockets = io?.sockets?.sockets;
+  if (!activeSockets) {
+    return;
+  }
 
-  // physics group for all player ships
-  this.players = this.physics.add.group();
+  const activeIds = new Set(activeSockets.keys());
+  Object.keys(players).forEach((playerId) => {
+    if (!activeIds.has(playerId)) {
+      console.warn('🧹 Removing stale player without active socket:', playerId);
 
-  // simple team score
-  this.scores = {
-    blue: 0,
-    red: 0
-  };
+      // Clean up physics body
+      const body = playerBodies.get(playerId);
+      if (body) {
+        body.destroy();
+        playerBodies.delete(playerId);
+      }
 
-  // spawn the star pickup somewhere in the map
-  this.star = this.physics.add.image(
-    Math.floor(Math.random() * 700) + 50,
-    Math.floor(Math.random() * 500) + 50,
-    'star'
-  );
-
-  // make players collide with each other
-  this.physics.add.collider(this.players);
-
-  // detect when a player overlaps (touches) the star
-  this.physics.add.overlap(this.players, this.star, function (star, player) {
-    // add score to that player's team
-    if (players[player.playerId].team === 'red') {
-      self.scores.red += 10;
-    } else {
-      self.scores.blue += 10;
+      delete players[playerId];
+      io.emit('playerDisconnected', playerId);
     }
+  });
+}
 
-    // move the star somewhere else
-    self.star.setPosition(
-      Math.floor(Math.random() * 700) + 50,
-      Math.floor(Math.random() * 500) + 50
-    );
+function initializeServer(io) {
+  console.log('✅ Initializing authoritative server with arcade-physics...');
+  console.log('⭐ Initial star positions:', gameState.stars);
 
-    // broadcast updated score + star position to everyone
-    io.emit('updateScore', self.scores);
-    io.emit('starLocation', { x: self.star.x, y: self.star.y });
+  // Initialize arcade-physics
+  physics = new ArcadePhysics({
+    width: WORLD_WIDTH,
+    height: WORLD_HEIGHT,
+    gravity: { x: 0, y: 0 } // Top-down, zero gravity
   });
 
-  // ~~~ Socket handlers ~~~
-  // each web client that connects to socket.io becomes a player
-  io.on('connection', function (socket) {
-    console.log('a user connected', socket.id);
+  // Create static bodies for stars
+  gameState.stars.forEach((star, index) => {
+    const starBody = physics.add.staticBody(star.x, star.y, 30, 30);
+    starBody.starId = star.id;
+    starBodies.push(starBody);
+  });
 
-    // create player data in authoritative state
+  console.log('✅ Physics world initialized');
+
+  // Handle client connections
+  io.on('connection', (socket) => {
+    removeStalePlayers(io);
+    console.log('🎮 User connected:', socket.id);
+
+    // Create player
+    const startX = Math.floor(Math.random() * (WORLD_WIDTH - 100)) + 50;
+    const startY = Math.floor(Math.random() * (WORLD_HEIGHT - 100)) + 50;
+
     players[socket.id] = {
-      rotation: 0,
-      x: Math.floor(Math.random() * 700) + 50,
-      y: Math.floor(Math.random() * 500) + 50,
       playerId: socket.id,
-      team: (Math.floor(Math.random() * 2) === 0) ? 'red' : 'blue',
-      input: {
-        left: false,
-        right: false,
-        up: false,
-        down: false
-      },
-      // stats (these are what power your HUD in clientGame.js)
+      x: startX,
+      y: startY,
+      rotation: 0,
+      velocityX: 0,
+      velocityY: 0,
+      angularVelocity: 0,
+      team: Math.random() < 0.5 ? 'red' : 'blue',
+      input: { left: false, right: false, up: false, down: false },
       hp: 100,
       maxHp: 100,
       xp: 0,
       maxXp: 100
     };
 
-    // spawn a physics body for this player
-    addPlayer(self, players[socket.id]);
+    // Create physics body for player (53x40 matching client ship size)
+    const playerBody = physics.add.body(startX, startY, 53, 40);
+    playerBody.setDrag(0);
+    playerBody.setMaxVelocity(400);
+    playerBody.playerId = socket.id;
+    playerBodies.set(socket.id, playerBody);
 
-    // send the whole current players list to JUST the new player
+    // Set up collision detection between this player and all stars
+    starBodies.forEach((starBody) => {
+      physics.add.overlap(playerBody, starBody, (player, star) => {
+        handleStarCollection(io, player, star);
+      });
+    });
+
+    const activeSocketCount = io.sockets?.sockets?.size ?? 0;
+    console.log('📊 Total active players:', Object.keys(players).length);
+    console.log('🔌 Active sockets:', activeSocketCount);
+    console.log('📋 Player IDs:', Object.keys(players));
+
+    // Send current state to new player
     socket.emit('currentPlayers', players);
+    console.log('📤 Sending star locations to new player:', gameState.stars);
+    socket.emit('starsLocation', gameState.stars);
+    socket.emit('updateScore', gameState.scores);
 
-    // tell everyone else "hey here's a new player"
+    // Notify others
     socket.broadcast.emit('newPlayer', players[socket.id]);
 
-    // send star position + score to the new player
-    socket.emit('starLocation', { x: self.star.x, y: self.star.y });
-    socket.emit('updateScore', self.scores);
+    // Handle input
+    socket.on('playerInput', (input) => {
+      if (players[socket.id]) {
+        players[socket.id].input = input;
 
-    // listen for this player's inputs so we can simulate them
-    socket.on('playerInput', function (inputData) {
-      handlePlayerInput(self, socket.id, inputData);
+        // Debug log when input is received
+        if (!socket.lastInputLog || Date.now() - socket.lastInputLog > 1000) {
+          if (input.left || input.right || input.up || input.down) {
+            console.log('📥 Received input from', socket.id.substring(0, 8), ':', input);
+            socket.lastInputLog = Date.now();
+          }
+        }
+      }
     });
 
-    // player disconnects
-    socket.on('disconnect', function () {
-      console.log('user disconnected', socket.id);
+    // Handle disconnect
+    socket.on('disconnect', () => {
+      console.log('👋 User disconnected:', socket.id);
 
-      // remove physics body from the scene
-      removePlayer(self, socket.id);
+      // Clean up physics body
+      const body = playerBodies.get(socket.id);
+      if (body) {
+        body.destroy();
+        playerBodies.delete(socket.id);
+      }
 
-      // remove from our authoritative object
-      delete players[socket.id];
+      // Clean up the player
+      if (players[socket.id]) {
+        delete players[socket.id];
+        console.log('✅ Player removed from game state');
+        console.log('📊 Active players remaining:', Object.keys(players).length);
+      }
 
-      // tell all clients to delete this sprite
+      // Notify all clients
       io.emit('playerDisconnected', socket.id);
+
+      // Sweep any lingering players whose sockets are gone
+      removeStalePlayers(io);
     });
   });
+
+  // Game loop (60 FPS)
+  let frameCount = 0;
+  let lastTime = Date.now();
+
+  setInterval(() => {
+    const currentTime = Date.now();
+    const delta = currentTime - lastTime;
+    lastTime = currentTime;
+
+    updateGame(io, frameCount, delta);
+    frameCount++;
+  }, 1000 / 60);
+
+  console.log('✅ Authoritative server ready!');
 }
 
-// ~~~ Update ~~~
-// runs every tick server-side
-function update() {
-  // apply movement for each ship based on its stored input flags
-  this.players.getChildren().forEach((player) => {
-    const input = players[player.playerId].input;
+function handleStarCollection(io, playerBody, starBody) {
+  const player = players[playerBody.playerId];
+  if (!player) return;
 
-    // turn
+  const star = gameState.stars.find(s => s.id === starBody.starId);
+  if (!star) return;
+
+  console.log('⭐⭐⭐ STAR', star.id, 'COLLECTED by', player.playerId, '! Team:', player.team);
+  gameState.scores[player.team] += 10;
+
+  // Move this star to a new random position
+  const oldPos = { x: star.x, y: star.y };
+  star.x = Math.floor(Math.random() * (WORLD_WIDTH - 100)) + 50;
+  star.y = Math.floor(Math.random() * (WORLD_HEIGHT - 100)) + 50;
+
+  // Update star body position
+  starBody.x = star.x;
+  starBody.y = star.y;
+  starBody.updateCenter();
+
+  console.log('⭐ Star', star.id, 'moved from', oldPos, 'to', { x: star.x, y: star.y });
+
+  // Broadcast updates
+  console.log('📡 Broadcasting score update:', gameState.scores);
+  io.emit('updateScore', gameState.scores);
+  console.log('📡 Broadcasting new star locations:', gameState.stars);
+  io.emit('starsLocation', gameState.stars);
+}
+
+function updateGame(io, frameCount, delta) {
+  if (frameCount % 60 === 0) {
+    removeStalePlayers(io);
+  }
+
+  // Update physics world
+  physics.world.update(Date.now(), delta);
+
+  // Update each player using their physics body
+  playerBodies.forEach((body, playerId) => {
+    const player = players[playerId];
+    if (!player) return;
+
+    // Debug log every second for ALL players
+    if (frameCount % 60 === 0) {
+      const vel = Math.round(body.velocity.length());
+      if (vel > 0 || player.input.up || player.input.down || player.input.left || player.input.right) {
+        console.log('🎮 Frame', frameCount,
+          '- Player', player.playerId.substring(0, 8),
+          'at (', Math.round(body.x), Math.round(body.y), ')',
+          'vel:', vel,
+          'input:', JSON.stringify(player.input));
+      }
+    }
+
+    const input = player.input;
+
+    // Rotation using physics body's angular velocity
+    // Convert degrees/sec to radians/sec: 300 deg/s * (π/180) ≈ 5.236 rad/s
+    const angularSpeed = 300 * (Math.PI / 180);
     if (input.left) {
-      player.setAngularVelocity(-300);
+      body.setAngularVelocity(-angularSpeed);
     } else if (input.right) {
-      player.setAngularVelocity(300);
+      body.setAngularVelocity(angularSpeed);
     } else {
-      player.setAngularVelocity(0);
+      body.setAngularVelocity(0);
     }
 
-    // thrust forward
+    // Acceleration using physics body
     if (input.up) {
-      // rotate + thrust in facing direction
-      this.physics.velocityFromRotation(
-        player.rotation + 1.5,
-        200,
-        player.body.acceleration
-      );
-    }
-    // reverse thruster - decelerate to zero
-    else if (input.down) {
-      // Apply deceleration proportional to current velocity
-      const currentVel = player.body.velocity.length();
+      // Use arcade-physics velocityFromRotation method
+      const angle = body.rotation + 1.5;
+      physics.velocityFromRotation(angle, 200, body.acceleration);
+    } else if (input.down) {
+      // Deceleration - apply braking force
+      const currentVel = body.velocity.length();
       if (currentVel > 50) {
         // Normal deceleration for higher speeds
-        const decelX = -player.body.velocity.x * 0.1;
-        const decelY = -player.body.velocity.y * 0.1;
-        player.body.setAcceleration(decelX * 10, decelY * 10);
+        const decelX = -body.velocity.x * 0.1;
+        const decelY = -body.velocity.y * 0.1;
+        body.setAcceleration(decelX * 10, decelY * 10);
       } else if (currentVel > 5) {
         // Aggressive deceleration when below 50 velocity
-        const decelX = -player.body.velocity.x * 0.3;
-        const decelY = -player.body.velocity.y * 0.3;
-        player.body.setAcceleration(decelX * 10, decelY * 10);
+        const decelX = -body.velocity.x * 0.3;
+        const decelY = -body.velocity.y * 0.3;
+        body.setAcceleration(decelX * 10, decelY * 10);
       } else {
         // When nearly stopped, set velocity to zero
-        player.body.setVelocity(0, 0);
-        player.body.setAcceleration(0, 0);
+        body.setVelocity(0, 0);
+        body.setAcceleration(0, 0);
       }
     } else {
-      player.setAcceleration(0);
+      body.setAcceleration(0, 0);
     }
 
-    // sync updated position/rotation back to the authoritative state
-    players[player.playerId].x = player.x;
-    players[player.playerId].y = player.y;
-    players[player.playerId].rotation = player.rotation;
+    // Bounds checking with buffer
+    if (body.x < BORDER_BUFFER) {
+      body.x = BORDER_BUFFER;
+      body.setVelocityX(0);
+    } else if (body.x > WORLD_WIDTH - BORDER_BUFFER) {
+      body.x = WORLD_WIDTH - BORDER_BUFFER;
+      body.setVelocityX(0);
+    }
+
+    if (body.y < BORDER_BUFFER) {
+      body.y = BORDER_BUFFER;
+      body.setVelocityY(0);
+    } else if (body.y > WORLD_HEIGHT - BORDER_BUFFER) {
+      body.y = WORLD_HEIGHT - BORDER_BUFFER;
+      body.setVelocityY(0);
+    }
+
+    // Sync player state from physics body
+    player.x = body.x;
+    player.y = body.y;
+    player.rotation = body.rotation;
+    player.velocityX = body.velocity.x;
+    player.velocityY = body.velocity.y;
+    player.angularVelocity = body.angularVelocity;
   });
 
-  // clamp players to world bounds (with buffer from edge)
-  this.players.getChildren().forEach((player) => {
-    // Stop at borders instead of wrapping (with buffer)
-    if (player.x < BORDER_BUFFER) {
-      player.x = BORDER_BUFFER;
-      player.setVelocityX(0);
-    } else if (player.x > 800 - BORDER_BUFFER) {
-      player.x = 800 - BORDER_BUFFER;
-      player.setVelocityX(0);
-    }
+  // Physics world handles collision detection automatically via overlap colliders
+  physics.world.postUpdate(Date.now(), delta);
 
-    if (player.y < BORDER_BUFFER) {
-      player.y = BORDER_BUFFER;
-      player.setVelocityY(0);
-    } else if (player.y > 600 - BORDER_BUFFER) {
-      player.y = 600 - BORDER_BUFFER;
-      player.setVelocityY(0);
-    }
-  });
-
-  // broadcast authoritative player states to all clients
+  // Broadcast player updates
   io.emit('playerUpdates', players);
 }
 
-// ~~~ Handle player input ~~~
-// store most recent inputs from a client; update() will apply them
-function handlePlayerInput(self, playerId, input) {
-  self.players.getChildren().forEach((player) => {
-    if (playerId === player.playerId) {
-      players[player.playerId].input = input;
-    }
-  });
-}
-
-// ~~~ Add player ~~~
-// actually create the Arcade Physics body for a new player
-function addPlayer(self, playerInfo) {
-  const player = self.physics.add
-    .image(playerInfo.x, playerInfo.y, 'ship')
-    .setOrigin(0.5, 0.5)
-    .setDisplaySize(53, 40);
-
-  player.setDrag(0);
-  player.setAngularDrag(0);
-  player.setMaxVelocity(400);
-
-  player.playerId = playerInfo.playerId;
-  self.players.add(player);
-}
-
-// ~~~ Remove player ~~~
-function removePlayer(self, playerId) {
-  self.players.getChildren().forEach((player) => {
-    if (playerId === player.playerId) {
-      player.destroy();
-    }
-  });
-}
-
-// ~~~ Boot the headless Phaser sim ~~~
-const game = new Phaser.Game(config);
-
-// let the outer server (index.js) know we finished booting
-if (typeof window !== 'undefined' && typeof window.gameLoaded === 'function') {
-  window.gameLoaded();
-}
+module.exports = { initializeServer };
