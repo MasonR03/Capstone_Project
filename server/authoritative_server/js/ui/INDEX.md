@@ -1,0 +1,1 @@
+Working progess. This section is to hopefully able to start to split the functionality of the assets, and other UI elements from the main functions to spread out the code. 
