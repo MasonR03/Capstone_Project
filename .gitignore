@@ -1,0 +1,56 @@
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Env files
+.env
+.env.*
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Build output
+dist/
+build/
+coverage/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor directories
+.vscode/
+.idea/
+
+# Cache
+.cache/
+
+# Temporary
+tmp/
+temp/
+
+# Other
+*.sqlite
+*.sqlite3
+
+# Ignore local server logs
+/server/logs/
+
+# Ignore any .local files
+*.local
+
+# Lock files for other package managers (optional)
+.pnp.*
+
+# Optional for editors that create swap files
+*.swp
+
+
+nul
+
+# End of file
