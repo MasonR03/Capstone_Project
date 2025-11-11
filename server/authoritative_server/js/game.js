@@ -120,8 +120,8 @@ function initializeServer(io) {
     // Send current state to new player
     socket.emit('currentPlayers', players);
     console.log('📤 Sending star locations to new player:', gameState.stars);
-    socket.emit('starsLocation', gameState.stars);
-    socket.emit('updateScore', gameState.scores);
+    UI.emitStars(socket, gameState.stars);
+    UI.emitScore(socket, gameState.scores);
 
     // Notify others
     socket.broadcast.emit('newPlayer', players[socket.id]);
