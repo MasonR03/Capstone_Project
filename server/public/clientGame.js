@@ -17,6 +17,7 @@ socket.on('connect', function() {
 // Set up global handler for stars that works before Phaser scene is created
 socket.on('starsLocation', function (starsInfo) {
   console.log('📍 Global: Star locations received from server:', starsInfo);
+  latestStars = starsInfo || latestStars; // For the mini-map to pick up on star location
   if (starSprites && starSprites.length > 0) {
     // Stars already created, update them directly
     starsInfo.forEach((star, index) => {
@@ -53,6 +54,9 @@ let starSprites = [];  // Array to hold multiple star sprites
 
 // local fallback player (DISABLED for multiplayer - causes double ship issue)
 let localPlayerSprite = null;
+
+let latestStars = [];   // <= stars array for minimap
+
 
 // world bounds we'll reuse
 const WORLD_W = 2000;
@@ -142,6 +146,9 @@ function create() {
 
   // group of networked players (from server if/when we get them)
   this.playersGroup = this.physics.add.group();
+
+  // Sets up the ui
+  this.ui = UI.create(this, WORLD_W, WORLD_H, { size: 160, radius: 70, margin: 20 });
 
   // create 5 star sprites (visual only, server handles collection)
   // Initialize at default positions, server will update with actual positions
@@ -371,6 +378,8 @@ function update(time, delta) {
   // Server handles all physics - client only sends input and displays results
   // This prevents the double ship issue where local and server ships were both rendered
 
+
+
   // SEND INPUT STATE TO SERVER (only when connected with valid ID)
   if (myId && socket.connected) {
     const inputPayload = {
@@ -383,6 +392,7 @@ function update(time, delta) {
   }
 
   // UI is updated in the playerUpdates handler (authoritative source)
+  UI.update(this.ui, this, clientPlayers, latestStars, myId);
 }
 
 // ~~~ Helpers ~~~
