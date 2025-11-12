@@ -57,6 +57,9 @@ let localPlayerSprite = null;
 
 let latestStars = [];   // <= stars array for minimap
 
+let UIHud = null; // controller from UI.init
+
+
 
 // world bounds we'll reuse
 const WORLD_W = 2000;
@@ -148,7 +151,18 @@ function create() {
   this.playersGroup = this.physics.add.group();
 
   // Sets up the ui
-  this.ui = UI.create(this, WORLD_W, WORLD_H, { size: 160, radius: 70, margin: 20 });
+  // OLD: this.ui = UI.create(...)
+  this.minimap = MiniMap.create(this, WORLD_W, WORLD_H, { size: 160, radius: 70, margin: 20 });
+
+
+  // — UI init —
+  UIHud = window.UI && window.UI.init(this, {
+    world: { width: WORLD_W, height: WORLD_H },
+    minimap: { radius: 70 } // you can tweak later
+  });
+  if (!UIHud) {
+    console.warn('UI module not found. Did you include public/ui.js before clientGame.js?');
+  }
 
   // create 5 star sprites (visual only, server handles collection)
   // Initialize at default positions, server will update with actual positions
@@ -184,14 +198,6 @@ function create() {
     down: Phaser.Input.Keyboard.KeyCodes.DOWN
   });
 
-  // ~~~ HUD / MINIMAP are now external ~~~
-  // initialize UI (round minimap, hp/xp bars, score text)
-  if (window.UI && typeof UI.init === 'function') {
-    UI.init(this, { worldW: WORLD_W, worldH: WORLD_H, miniRadius: 70 });
-  } else {
-    console.warn('UI module not found. Did you include public/ui.js before clientGame.js?');
-  }
-
   // fullscreen toggle with F
   this.input.keyboard.on('keydown-F', () => {
     if (this.scale.isFullscreen) {
@@ -200,33 +206,6 @@ function create() {
       this.scale.startFullscreen();
     }
   });
-
-  // ~~~ LOCAL FALLBACK PLAYER ~~~
-  // DISABLED for multiplayer - local sprite causes double ship issue
-  // The server handles all physics and we only display authoritative sprites
-
-  // Uncomment below only for offline/local play:
-  /*
-  localPlayerSprite = this.physics.add
-    .image(WORLD_W / 2 + 100, WORLD_H / 2, 'ship')
-    .setOrigin(0.5, 0.5)
-    .setDisplaySize(53, 40);
-
-  localPlayerSprite.setDrag(0);
-  localPlayerSprite.setAngularDrag(0);
-  localPlayerSprite.setMaxVelocity(400);
-
-  // camera follows local player
-  this.cameras.main.startFollow(localPlayerSprite, true, 0.1, 0.1);
-  this.cameras.main.setZoom(1.0);
-
-  // ⭐ LOCAL OVERLAP LOGIC ⭐
-  starSprites.forEach((star, index) => {
-    this.physics.add.overlap(localPlayerSprite, star, () => {
-      collectStar(self, index);
-    });
-  });
-  */
 
   // For multiplayer, camera will follow authoritative sprite when it's created
   // Set initial camera position to center of world while waiting for player
@@ -309,9 +288,7 @@ function create() {
   socket.on('updateScore', function (scores) {
     // sync from server
     serverScores = scores || { red: 0, blue: 0 };
-    if (window.UI && typeof UI.setScore === 'function') {
-      UI.setScore(serverScores);
-    }
+    UIHud && UIHud.updateScores(serverScores);
   });
 
   socket.on('playerUpdates', function (serverPlayers) {
@@ -355,20 +332,28 @@ function create() {
         }
       }
 
-      // Update local HUD stats for our player
+      // Update local HUD stats for our player (and refresh HP/XP bar)
       if (id === myId) {
-        // authoritative HUD stats
         if (serverP.hp !== undefined)    localPlayerStats.hp = serverP.hp;
         if (serverP.maxHp !== undefined) localPlayerStats.maxHp = serverP.maxHp;
         if (serverP.xp !== undefined)    localPlayerStats.xp = serverP.xp;
         if (serverP.maxXp !== undefined) localPlayerStats.maxXp = serverP.maxXp;
+
+        UIHud && UIHud.updateHpXp({
+          hp: localPlayerStats.hp,
+          maxHp: localPlayerStats.maxHp,
+          xp: localPlayerStats.xp,
+          maxXp: localPlayerStats.maxXp
+        });
       }
     });
 
     // tell UI to redraw minimap with newest players/stars
-    if (window.UI && typeof UI.update === 'function') {
-      UI.update(serverPlayers, pendingStarPositions ?? [], myId, localPlayerStats);
-    }
+    UIHud && UIHud.updateMinimap({
+      players: serverPlayers,
+      myId,
+      stars: (starSprites || []).map((s, i) => ({ id: i, x: s.x, y: s.y }))
+    });
   });
 }
 
@@ -377,8 +362,6 @@ function update(time, delta) {
   // LOCAL MOVEMENT DISABLED for multiplayer
   // Server handles all physics - client only sends input and displays results
   // This prevents the double ship issue where local and server ships were both rendered
-
-
 
   // SEND INPUT STATE TO SERVER (only when connected with valid ID)
   if (myId && socket.connected) {
@@ -391,8 +374,19 @@ function update(time, delta) {
     socket.emit('playerInput', inputPayload);
   }
 
-  // UI is updated in the playerUpdates handler (authoritative source)
-  UI.update(this.ui, this, clientPlayers, latestStars, myId);
+  // Re-anchor minimap in case the camera resizes (fullscreen, etc.)
+  MiniMap.anchor(this.minimap, this, { size: 160, margin: 20 });
+
+  // Feed latest data so it follows the player and clamps off-screen dots
+  MiniMap.update(this.minimap, clientPlayers, latestStars, myId);
+
+  // Keep HUD aligned & refreshed (your existing HUD API)
+  UIHud && UIHud.tick(this.cameras.main);
+  UIHud && UIHud.updateMinimap?.({
+    players: clientPlayers,
+    myId,
+    stars: (starSprites || []).map((s, i) => ({ id: i, x: s.x, y: s.y }))
+  });
 }
 
 // ~~~ Helpers ~~~
