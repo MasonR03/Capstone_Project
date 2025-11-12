@@ -48,7 +48,7 @@ let localPlayerStats = {
 
 // input refs and HUD refs
 let cursors;
-let hpBg, hpFill, xpBg, xpFill, scoreText;
+// (UI is now in public/ui.js)
 let starSprites = [];  // Array to hold multiple star sprites
 
 // local fallback player (DISABLED for multiplayer - causes double ship issue)
@@ -177,52 +177,13 @@ function create() {
     down: Phaser.Input.Keyboard.KeyCodes.DOWN
   });
 
-  // ~~~ HUD setup ~~~
-  const cam = this.cameras.main;
-  const cx = cam.width / 2;
-
-  hpBg = this.add.rectangle(
-    cx,
-    cam.height - 80,
-    200,
-    20,
-    0x222222
-  ).setScrollFactor(0).setDepth(100);
-
-  hpFill = this.add.rectangle(
-    cx,
-    cam.height - 80,
-    200,
-    20,
-    0xff3333
-  ).setScrollFactor(0).setDepth(101);
-
-  xpBg = this.add.rectangle(
-    cx,
-    cam.height - 50,
-    200,
-    10,
-    0x222222
-  ).setScrollFactor(0).setDepth(100);
-
-  xpFill = this.add.rectangle(
-    cx,
-    cam.height - 50,
-    200,
-    10,
-    0x00ccff
-  ).setScrollFactor(0).setDepth(101);
-
-  scoreText = this.add.text(
-    20,
-    20,
-    "Score: R 0 | B 0",
-    {
-      fontSize: '18px',
-      fill: '#ffffff',
-      fontFamily: 'monospace'
-    }
-  ).setScrollFactor(0).setDepth(100);
+  // ~~~ HUD / MINIMAP are now external ~~~
+  // initialize UI (round minimap, hp/xp bars, score text)
+  if (window.UI && typeof UI.init === 'function') {
+    UI.init(this, { worldW: WORLD_W, worldH: WORLD_H, miniRadius: 70 });
+  } else {
+    console.warn('UI module not found. Did you include public/ui.js before clientGame.js?');
+  }
 
   // fullscreen toggle with F
   this.input.keyboard.on('keydown-F', () => {
@@ -253,7 +214,6 @@ function create() {
   this.cameras.main.setZoom(1.0);
 
   // ⭐ LOCAL OVERLAP LOGIC ⭐
-  // if local player touches any star, collectStar gets called
   starSprites.forEach((star, index) => {
     this.physics.add.overlap(localPlayerSprite, star, () => {
       collectStar(self, index);
@@ -341,7 +301,10 @@ function create() {
 
   socket.on('updateScore', function (scores) {
     // sync from server
-    serverScores = scores;
+    serverScores = scores || { red: 0, blue: 0 };
+    if (window.UI && typeof UI.setScore === 'function') {
+      UI.setScore(serverScores);
+    }
   });
 
   socket.on('playerUpdates', function (serverPlayers) {
@@ -394,6 +357,11 @@ function create() {
         if (serverP.maxXp !== undefined) localPlayerStats.maxXp = serverP.maxXp;
       }
     });
+
+    // tell UI to redraw minimap with newest players/stars
+    if (window.UI && typeof UI.update === 'function') {
+      UI.update(serverPlayers, pendingStarPositions ?? [], myId, localPlayerStats);
+    }
   });
 }
 
@@ -414,17 +382,7 @@ function update(time, delta) {
     socket.emit('playerInput', inputPayload);
   }
 
-  // HUD UPDATE
-  const hpPct = safeDiv(localPlayerStats.hp, localPlayerStats.maxHp);
-  hpFill.width = 200 * hpPct;
-
-  const xpPct = safeDiv(localPlayerStats.xp, localPlayerStats.maxXp);
-  xpFill.width = 200 * xpPct;
-
-  // use whichever score we currently have (local bump or from server)
-  scoreText.setText(
-    `Score: R ${serverScores.red || 0} | B ${serverScores.blue || 0}`
-  );
+  // UI is updated in the playerUpdates handler (authoritative source)
 }
 
 // ~~~ Helpers ~~~
@@ -477,25 +435,9 @@ function addOrUpdatePlayerSprite(scene, playerInfo) {
   return sprite;
 }
 
-// called when star collection happens (server authoritative)
-// Note: This function is currently not used in multiplayer mode
-// as the server handles all star collection logic
+// Note: collectStar(...) stays unused in multiplayer mode
 function collectStar(scene, starIndex) {
-  // bump red team score locally
-  serverScores.red = (serverScores.red || 0) + 10;
-
-  // move star somewhere else in the world (client-side rng for now)
-  const newX = Phaser.Math.Between(50, WORLD_W - 50);
-  const newY = Phaser.Math.Between(50, WORLD_H - 50);
-  if (starSprites[starIndex]) {
-    starSprites[starIndex].setPosition(newX, newY);
-  }
-
-  // could also award XP/HP here if you want:
-  localPlayerStats.xp = Math.min(
-    localPlayerStats.xp + 5,
-    localPlayerStats.maxXp
-  );
+  // local demo only
 }
 
 function safeDiv(n, d) {
@@ -523,7 +465,6 @@ function drawDebugGrid(graphics, worldWidth, worldHeight) {
   graphics.lineStyle(1, 0x666666, 0.5); // Slightly brighter for major gridlines
   for (let x = 0; x <= worldWidth; x += 500) {
     for (let y = 0; y <= worldHeight; y += 500) {
-      // Draw thicker lines at 500 unit intervals
       if (x > 0) {
         graphics.moveTo(x, 0);
         graphics.lineTo(x, worldHeight);

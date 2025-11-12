@@ -8,6 +8,10 @@ const players = {};
 const WORLD_WIDTH = 2000;
 const WORLD_HEIGHT = 2000;
 const BORDER_BUFFER = 20;
+const XP_PER_STAR = 10;
+
+// Cooldown so a star can't trigger multiple times in the same instant
+const starPickupCooldown = new Map(); // starId -> lastTriggerFrame
 
 // Game state
 const gameState = {
@@ -191,31 +195,36 @@ function handleStarCollection(io, playerBody, starBody) {
   if (!star) return;
 
   console.log('⭐⭐⭐ STAR', star.id, 'COLLECTED by', player.playerId, '! Team:', player.team);
+
+  // score
   gameState.scores[player.team] += 10;
 
-  // Move this star to a new random position
+  // XP gain (clamped to max)
+  player.xp = Math.min((player.xp || 0) + XP_PER_STAR, player.maxXp || 100);
+
+  // move star
   const oldPos = { x: star.x, y: star.y };
   star.x = Math.floor(Math.random() * (WORLD_WIDTH - 100)) + 50;
   star.y = Math.floor(Math.random() * (WORLD_HEIGHT - 100)) + 50;
 
-  // Update star body position
+  // update star physics body
   starBody.x = star.x;
   starBody.y = star.y;
   starBody.updateCenter();
 
   console.log('⭐ Star', star.id, 'moved from', oldPos, 'to', { x: star.x, y: star.y });
 
-  // Broadcast updates
-  console.log('📡 Broadcasting score update:', gameState.scores);
-  UI.emitScore(io, gameState.scores);
-  console.log('📡 Broadcasting new star locations:', gameState.stars);
+  // broadcast UI updates
+  UI.emitScore(io, { ...gameState.scores });
   UI.emitStars(io, gameState.stars);
 }
+
 
 function updateGame(io, frameCount, delta) {
   if (frameCount % 60 === 0) {
     removeStalePlayers(io);
   }
+
 
   // Update physics world
   physics.world.update(Date.now(), delta);
@@ -302,6 +311,24 @@ function updateGame(io, frameCount, delta) {
     player.velocityY = body.velocity.y;
     player.angularVelocity = body.angularVelocity;
   });
+
+    // --- Fallback overlap detection (server-side, distance based) ---
+  // This makes sure stars get collected even if the arcade-physics overlap isn't triggering.
+  playerBodies.forEach((body) => {
+    starBodies.forEach((starBody) => {
+      const dx = body.x - starBody.x;
+      const dy = body.y - starBody.y;
+      const dist2 = dx*dx + dy*dy;
+      const R = 32; // pickup radius ~ sprite size
+      const canTriggerAgain = (starPickupCooldown.get(starBody.starId) ?? -99999) < (frameCount - 5);
+
+      if (dist2 <= R*R && canTriggerAgain) {
+        starPickupCooldown.set(starBody.starId, frameCount);
+        handleStarCollection(io, body, starBody);
+      }
+    });
+  });
+
 
   // Physics world handles collision detection automatically via overlap colliders
   physics.world.postUpdate(Date.now(), delta);
