@@ -107,5 +107,7 @@
     if (xpText) xpText.setPosition(cx, camera.height - 50);
   }
 
-  window.UI = { init, updateScores, updateHpXp, tick };
+  function updateMinimap() {}
+
+  window.UI = { init, updateScores, updateHpXp, tick, updateMinimap };
 })();
