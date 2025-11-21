@@ -336,7 +336,7 @@ function updateGame(io, frameCount, delta) {
   // Broadcast player updates
   io.emit('playerUpdates', players);
 
-  //Sends a UI snapshot ~ every 10sec
+  // Sends a UI snapshot ~ every 10sec
   if (frameCount % 6 === 0) {
     UI.emitUiState(io, players, gameState);
   }
