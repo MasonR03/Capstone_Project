@@ -7,6 +7,7 @@ const socket = io({
 const clientPlayers = {};   // playerId -> Phaser sprite
 let myId = null;            // socket.id for me
 let pendingStarPositions = null; // Store star positions received before scene creation
+let UIHud = null; // controller from UI.init
 
 // Set myId as soon as socket connects
 socket.on('connect', function() {
@@ -33,6 +34,11 @@ socket.on('starsLocation', function (starsInfo) {
   }
 });
 
+socket.on('updateScore', function (scores) {
+  serverScores = scores || { red: 0, blue: 0 };
+  UIHud && UIHud.updateScores(serverScores);
+});
+
 // Border buffer distance - how far from edge to stop ships
 const BORDER_BUFFER = 20;
 
@@ -56,10 +62,6 @@ let starSprites = [];  // Array to hold multiple star sprites
 let localPlayerSprite = null;
 
 let latestStars = [];   // <= stars array for minimap
-
-let UIHud = null; // controller from UI.init
-
-
 
 // world bounds we'll reuse
 const WORLD_W = 2000;
@@ -162,6 +164,8 @@ function create() {
   });
   if (!UIHud) {
     console.warn('UI module not found. Did you include public/ui.js before clientGame.js?');
+  } else {
+    UIHud.updateScores(serverScores);
   }
 
   // create 5 star sprites (visual only, server handles collection)
@@ -283,12 +287,6 @@ function create() {
   // Keep backward compatibility for single star updates (if needed)
   socket.on('starLocation', function (starInfo) {
     console.log('📍 Single star location received (legacy):', starInfo);
-  });
-
-  socket.on('updateScore', function (scores) {
-    // sync from server
-    serverScores = scores || { red: 0, blue: 0 };
-    UIHud && UIHud.updateScores(serverScores);
   });
 
   socket.on('playerUpdates', function (serverPlayers) {

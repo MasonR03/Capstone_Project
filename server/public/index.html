@@ -2,8 +2,11 @@
 <html>
   <head>
     <meta charset="utf-8" />
-    <title>Space Game</title>
+    <title>Orbitfall</title>
+    <link rel="icon" href="assets/favicon.png" type="image/png" />
     <style>
+      @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@600;900&display=swap');
+
       body {
         margin: 0;
         background: #1a1a1a;
@@ -63,10 +66,47 @@
       #debug-panel .coord {
         margin: 5px 0;
       }
+    
+
+    .game-stage {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+    }
+
+    #title-overlay {
+      display: inline-block;
+      font-family: 'Orbitron', sans-serif;
+      font-weight: 900;
+      font-size: 64px;
+      letter-spacing: 8px;
+      color: #00f7ff;
+      background: linear-gradient(90deg, rgba(0,255,255,0.12), rgba(255,255,255,0.06));
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+      text-shadow:
+        0 0 8px rgba(0,255,255,0.25),
+        0 8px 20px rgba(0,0,0,0.7);
+      pointer-events: none;
+      user-select: none;
+      z-index: 600;
+      white-space: nowrap;
+    }
+
+    /* scale down on smaller viewports */
+    @media (max-width: 900px) {
+      #title-overlay { font-size: 40px; letter-spacing: 6px; }
+    }
     </style>
   </head>
+  
   <body>
-    <div id="game-container"></div>
+    <div class="game-stage">
+      <div id="title-overlay">ORBITFALL</div>
+      <div id="game-container"></div>
+    </div>
     <button id="debug-button">Debug Tools</button>
     <div id="debug-panel">
       <h3>Debug Info</h3>
