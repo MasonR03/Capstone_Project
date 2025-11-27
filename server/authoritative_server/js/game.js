@@ -180,7 +180,6 @@ function initializeServer(io) {
       // Sweep any lingering players whose sockets are gone
       removeStalePlayers(io);
 
-      resetScoresIfNoPlayers(io);
     });
   });
 
