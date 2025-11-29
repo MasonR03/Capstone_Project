@@ -19,6 +19,15 @@ const gameState = {
   stars: []
 };
 
+function resetScoresIfNoPlayers(io) {
+  if (Object.keys(players).length === 0 && (gameState.scores.red !== 0 || gameState.scores.blue !== 0)) {
+    gameState.scores.red = 0;
+    gameState.scores.blue = 0;
+    console.log('🔄 All players disconnected. Resetting scores to zero.');
+    UI.emitScore(io, { ...gameState.scores });
+  }
+}
+
 // Physics world
 let physics = null;
 const playerBodies = new Map(); // Map socket.id -> Body
@@ -55,6 +64,8 @@ function removeStalePlayers(io) {
       io.emit('playerDisconnected', playerId);
     }
   });
+
+  resetScoresIfNoPlayers(io);
 }
 
 function initializeServer(io) {
@@ -168,6 +179,7 @@ function initializeServer(io) {
 
       // Sweep any lingering players whose sockets are gone
       removeStalePlayers(io);
+
     });
   });
 
