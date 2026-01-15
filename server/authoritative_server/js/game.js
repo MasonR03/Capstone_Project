@@ -158,7 +158,7 @@ function initializeServer(io) {
         // Debug log when input is received
         if (!socket.lastInputLog || Date.now() - socket.lastInputLog > 1000) {
           if (input.left || input.right || input.up || input.down) {
-            console.log('📥 Received input from', socket.id.substring(0, 8), ':', input);
+            console.log('📥 Received input from', players[socket.id]?.playerName || socket.id.substring(0, 8), ':', input);
             socket.lastInputLog = Date.now();
           }
         }
@@ -206,7 +206,7 @@ function initializeServer(io) {
     frameCount++;
   }, 1000 / 60);
 
-  console.log('Authoritative server ready!');
+  console.log('Server ready!');
 }
 
 function handleStarCollection(io, playerBody, starBody) {
@@ -262,7 +262,7 @@ function updateGame(io, frameCount, delta) {
       const vel = Math.round(body.velocity.length());
       if (vel > 0 || player.input.up || player.input.down || player.input.left || player.input.right) {
         console.log('🎮 Frame', frameCount,
-          '- Player', player.playerId.substring(0, 8),
+          '- Player', player.playerName || player.playerId.substring(0, 8),
           'at (', Math.round(body.x), Math.round(body.y), ')',
           'vel:', vel,
           'input:', JSON.stringify(player.input));
