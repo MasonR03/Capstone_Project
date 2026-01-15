@@ -95,8 +95,11 @@ function preload() {
   console.log('Preloading assets...');
 
   this.load.image('ship', 'assets/spaceShips_001.png');
-  this.load.image('star', 'assets/star_gold.png');
+  this.load.image('star', 'assets/Star.png');
+
   // this.load.image('otherPlayer', 'assets/enemyBlack5.png'); // optional
+  //bars
+  this.load.image('hudBars', 'assets/Bar.png');
 
   this.load.on('complete', () => {
     console.log('Assets loaded successfully');
@@ -109,6 +112,9 @@ function preload() {
 
 // ~~~ Create ~~~
 function create() {
+  //system check
+  console.log('clientGame.js create() is running!');
+
   const self = this;
 
   // Create graphics object for debug gridlines
@@ -178,6 +184,24 @@ function create() {
     );
     star.setOrigin(0.5, 0.5);
     star.setDepth(0); // Behind players
+    //plays star animation
+    star.setScale(1.15);
+    star.setAlpha(1.0);
+
+    const tw = this.tweens.add({
+      targets: star,
+      scale: 1.35,
+      alpha: 0.75,
+      duration: 700,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut'
+    });
+
+
+    console.log('Tween object:', tw);
+    console.log('Tween targets:', tw && tw.targets);
+
     starSprites.push(star);
     console.log('⭐ Initial star', i, 'created at:', star.x, star.y);
   }
