@@ -111,6 +111,8 @@ const DebugTools = (() => {
     const camYElement = document.getElementById('cam-y');
     const velocityElement = document.getElementById('velocity');
     const playerCountElement = document.getElementById('player-count');
+    const playerNamesSection = document.getElementById('player-names-section');
+    const playerNamesList = document.getElementById('player-names-list');
 
     // Get the active scene
     const scene = gameInstance?.scene?.scenes?.[0];
@@ -128,12 +130,31 @@ const DebugTools = (() => {
     // Get player from callback
     const playerInfo = getPlayerCallback ? getPlayerCallback() : null;
 
-    // Update player count
+    // Update player count and names
     if (playerInfo && playerInfo.allPlayers) {
-      const playerCount = Object.keys(playerInfo.allPlayers).length;
+       const allPlayers = playerInfo.allPlayers;
+      const playerCount = Object.keys(allPlayers).length;
       playerCountElement.textContent = playerCount;
+
+      // Display player names if available
+      if (playerInfo.playerNames && playerCount > 0) {
+        const playerNames = playerInfo.playerNames;
+        const namesList = Object.entries(playerNames)
+          .map(([id, name]) => `• ${name}`)
+          .join('<br>');
+        
+        if (namesList) {
+          playerNamesList.innerHTML = namesList;
+          playerNamesSection.style.display = 'block';
+        } else {
+          playerNamesSection.style.display = 'none';
+        }
+      } else {
+        playerNamesSection.style.display = 'none';
+      }
     } else {
       playerCountElement.textContent = '0';
+      playerNamesSection.style.display = 'none';
     }
 
     if (playerInfo && playerInfo.player) {

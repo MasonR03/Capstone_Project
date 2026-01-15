@@ -89,28 +89,28 @@
     hpLabel = scene.add.text(HP_LABEL_X, HP_LABEL_Y, 'HP', {
       fontSize: '7px',
       color: '#ffffff',
-      fontFamily: 'monospace'
+      font: 'Orbitron, sans-serif'
     }).setOrigin(0, 0.5);
 
     // XP label in gap
     xpLabel = scene.add.text(XP_LABEL_X, XP_LABEL_Y, 'XP', {
       fontSize: '7px',
       color: '#ffffff',
-      fontFamily: 'monospace'
+      font: 'Orbitron, sans-serif'
     }).setOrigin(0, 0.5);
 
     // HP numbers centered on bar
     hpText = scene.add.text(HP_BAR_CX, HP_CENTER_Y, '0/0', {
       fontSize: '10px',
       color: '#ffffff',
-      fontFamily: 'monospace'
+      font: 'Orbitron, sans-serif'
     }).setOrigin(0.5, 0.5);
 
     // XP numbers centered on bar
     xpText = scene.add.text(XP_BAR_CX, XP_CENTER_Y, '0/0', {
       fontSize: '10px',
       color: '#ffffff',
-      fontFamily: 'monospace'
+      font: 'Orbitron, sans-serif'
     }).setOrigin(0.5, 0.5);
 
     // Add in back-to-front order
@@ -120,7 +120,7 @@
     scoreText = scene.add.text(SCORE_X, SCORE_Y, 'Score: R 0 | B 0', {
       fontSize: '18px',
       fill: '#ffffff',
-      fontFamily: 'monospace'
+      font: 'Orbitron, sans-serif'
     });
     scoreText.setScrollFactor(0);
     scoreText.setDepth(210);

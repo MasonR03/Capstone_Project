@@ -37,9 +37,13 @@ temp/
 # Other
 *.sqlite
 *.sqlite3
-
+/.claude/
+AGENTS.md
+CLAUDE.md
+README-Flatbread.md
 # Ignore local server logs
 /server/logs/
+
 
 # Ignore any .local files
 *.local

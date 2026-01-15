@@ -1,43 +1,69 @@
-// ~~~ Socket connection ~~~
-const socket = io({
-  transports: ['websocket']
-});
+// ~~~ Socket connection (delayed until login) ~~~
+let socket = null;
 
 // ~~~ Global client state ~~~
 const clientPlayers = {};   // playerId -> Phaser sprite
-let myId = null;            // socket.id for me
+const playerNames = {};     // playerId -> player name
+const playerNameTexts = {}; // playerId -> Phaser text object
+let myId = null;            // Player name (set from login)
+let socketId = null;        // socket.id from server
 let pendingStarPositions = null; // Store star positions received before scene creation
 let UIHud = null; // controller from UI.init
 
-// Set myId as soon as socket connects
-socket.on('connect', function() {
-  myId = socket.id;
-  console.log('✅ Connected to server with ID:', myId);
-});
+// Initialize socket connection after login
+function initializeSocket() {
+  if (socket) return; // Already initialized
+  
+  socket = io({
+    transports: ['websocket']
+  });
+
+  // Set myId from playerName (from login.js)
+  socket.on('connect', function() {
+    socketId = socket.id;
+    // Use the player name from login as the myId for display purposes
+    if (!myId && typeof playerName !== 'undefined' && playerName) {
+      myId = playerName;
+    } else if (!myId) {
+      myId = socket.id;
+    }
+    console.log('✅ Connected to server');
+    console.log('🆔 My player ID (name):', myId);
+    console.log('🔌 Socket ID:', socketId);
+    
+    // Send player name to server for identification
+    socket.emit('setPlayerName', myId);
+  });
+  
+  // Set up other socket listeners
+  setupSocketListeners();
+}
 
 // Set up global handler for stars that works before Phaser scene is created
-socket.on('starsLocation', function (starsInfo) {
-  console.log('📍 Global: Star locations received from server:', starsInfo);
-  latestStars = starsInfo || latestStars; // For the mini-map to pick up on star location
-  if (starSprites && starSprites.length > 0) {
-    // Stars already created, update them directly
-    starsInfo.forEach((star, index) => {
-      if (starSprites[index]) {
-        starSprites[index].setPosition(star.x, star.y);
-        console.log('⭐ Global: Star', star.id, 'updated to position:', star.x, star.y);
-      }
-    });
-  } else {
-    // Stars not created yet, store for later
-    console.log('📌 Global: Storing star positions for when sprites are created');
-    pendingStarPositions = starsInfo;
-  }
-});
+function setupSocketListeners() {
+  socket.on('starsLocation', function (starsInfo) {
+    console.log('📍 Global: Star locations received from server:', starsInfo);
+    latestStars = starsInfo || latestStars; // For the mini-map to pick up on star location
+    if (starSprites && starSprites.length > 0) {
+      // Stars already created, update them directly
+      starsInfo.forEach((star, index) => {
+        if (starSprites[index]) {
+          starSprites[index].setPosition(star.x, star.y);
+          console.log('⭐ Global: Star', star.id, 'updated to position:', star.x, star.y);
+        }
+      });
+    } else {
+      // Stars not created yet, store for later
+      console.log('📌 Global: Storing star positions for when sprites are created');
+      pendingStarPositions = starsInfo;
+    }
+  });
 
-socket.on('updateScore', function (scores) {
-  serverScores = scores || { red: 0, blue: 0 };
-  UIHud && UIHud.updateScores(serverScores);
-});
+ socket.on('updateScore', function (scores) {
+    serverScores = scores || { red: 0, blue: 0 };
+    UIHud && UIHud.updateScores(serverScores);
+  });
+}
 
 // Border buffer distance - how far from edge to stop ships
 const BORDER_BUFFER = 20;
@@ -88,7 +114,34 @@ const clientConfig = {
   }
 };
 
-const game = new Phaser.Game(clientConfig);
+let game = null;
+
+// Wait for login before starting the game
+document.addEventListener('DOMContentLoaded', function() {
+  // Check if login is complete every 100ms
+  const loginCheckInterval = setInterval(function() {
+    if (typeof window.loginComplete !== 'undefined' && window.loginComplete === true && typeof playerName !== 'undefined' && playerName) {
+      clearInterval(loginCheckInterval);
+      console.log('🎮 Login complete. Initializing game and socket...');
+      
+      // Now initialize socket with player name
+      initializeSocket();
+      
+      // Start the game
+      game = new Phaser.Game(clientConfig);
+    }
+  }, 100);
+  
+  // Safety timeout after 30 seconds (in case of issues)
+  setTimeout(function() {
+    if (!game) {
+      console.warn('⚠️ Login timeout - starting game anyway');
+      if (!socket) initializeSocket();
+      game = new Phaser.Game(clientConfig);
+      clearInterval(loginCheckInterval);
+    }
+  }, 30000);
+});
 
 // ~~~ Preload ~~~
 function preload() {
@@ -128,11 +181,12 @@ function create() {
     if (myId && clientPlayers[myId]) {
       return {
         player: clientPlayers[myId],
-        allPlayers: clientPlayers
+        allPlayers: clientPlayers,
+        playerNames: playerNames
       };
     }
     // No local sprite in multiplayer mode
-    return { allPlayers: clientPlayers };
+    return { allPlayers: clientPlayers, playerNames: playerNames };
   }, this.debugGridGraphics);
 
   // physics world size
@@ -246,9 +300,8 @@ function create() {
   console.log('Test rectangle added at world center:', testRect.x, testRect.y);
   // Write word 'center' on rectangle.
   const centerText = this.add.text(testRect.x, testRect.y, 'CENTER', {
-    fontSize: '16px',
-    fill: '#ffffff',
-    fontFamily: 'monospace'
+    font: '16px Orbitron, sans-serif',
+    fill: '#ffffff'
   });
   centerText.setOrigin(0.5, 0.5);
 
@@ -327,12 +380,14 @@ function create() {
 
       // Create sprite if it doesn't exist (handles late-joining players)
       if (!clientPlayers[id]) {
-        console.log('Late player join detected, creating sprite for:', id);
+        const displayName = serverP.playerName || id;
+        console.log('Late player join detected, creating sprite for:', displayName);
         addOrUpdatePlayerSprite(self, serverP);
 
         // Check if this is our player and set camera
         if (id === socket.id && !self.cameraSet) {
-          console.log('This is MY player! Setting camera to follow:', id);
+          const displayName = serverP.playerName || id;
+          console.log('This is MY player! Setting camera to follow:', displayName);
           self.cameras.main.startFollow(clientPlayers[id], true, 0.1, 0.1);
           self.cameraSet = true;
           myId = id;
@@ -347,9 +402,22 @@ function create() {
         sprite.y = serverP.y;
         sprite.rotation = serverP.rotation;
 
+         // Update player name text position and content
+        if (playerNameTexts[id]) {
+          playerNameTexts[id].x = serverP.x;
+          playerNameTexts[id].y = serverP.y - 70;
+          
+          // Update name text in case it changed
+          if (serverP.playerName) {
+            playerNameTexts[id].setText(serverP.playerName);
+            playerNames[id] = serverP.playerName;
+          }
+        }
+
         // Make sure sprite stays visible
         if (!sprite.visible) {
-          console.warn('Sprite was invisible, making visible:', id);
+          const displayName = serverP.playerName || id;
+          console.warn('Sprite was invisible, making visible:', displayName);
           sprite.setVisible(true);
         }
       }
@@ -380,7 +448,7 @@ function create() {
 }
 
 // ~~~ Update ~~~
-function update(time, delta) {
+function update() {
   // LOCAL MOVEMENT DISABLED for multiplayer
   // Server handles all physics - client only sends input and displays results
   // This prevents the double ship issue where local and server ships were both rendered
@@ -414,9 +482,11 @@ function update(time, delta) {
 // ~~~ Helpers ~~~
 function addOrUpdatePlayerSprite(scene, playerInfo) {
   let sprite = clientPlayers[playerInfo.playerId];
+  const playerId = playerInfo.playerId;
+  const playerDisplayName = playerInfo.playerName || playerInfo.playerId;
 
   if (!sprite) {
-    console.log('Creating sprite for player:', playerInfo.playerId, 'at', playerInfo.x, playerInfo.y);
+    console.log('Creating sprite for player:', playerDisplayName, 'at', playerInfo.x, playerInfo.y);
 
     try {
       // Try to use the ship texture
@@ -444,14 +514,31 @@ function addOrUpdatePlayerSprite(scene, playerInfo) {
       sprite.setDepth(1);
       sprite.setActive(true);
 
-      clientPlayers[playerInfo.playerId] = sprite;
+       clientPlayers[playerId] = sprite;
+
+      // Store player name
+      if (playerInfo.playerName) {
+        playerNames[playerId] = playerInfo.playerName;
+      }
+
+      // Create player name text label
+      const nameText = scene.add.text(playerInfo.x, playerInfo.y - 70, playerDisplayName, {
+        font: '16px Orbitron, sans-serif',
+        fill: '#00ffff',
+        align: 'center',
+         stroke: '#000000',
+        strokeThickness: 2
+      });
+      nameText.setOrigin(0.5, 0.5);
+      nameText.setDepth(2);
+      playerNameTexts[playerId] = nameText;
 
       // Set initial position and rotation
       sprite.x = playerInfo.x;
       sprite.y = playerInfo.y;
       sprite.rotation = playerInfo.rotation || 0;
 
-      console.log('Sprite created successfully for:', playerInfo.playerId, 'Sprite object:', sprite);
+       console.log('Sprite created successfully for:', playerDisplayName);
     } catch (error) {
       console.error('Error creating sprite:', error);
     }
@@ -462,7 +549,7 @@ function addOrUpdatePlayerSprite(scene, playerInfo) {
 }
 
 // Note: collectStar(...) stays unused in multiplayer mode
-function collectStar(scene, starIndex) {
+function collectStar() {
   // local demo only
 }
 
