@@ -51,7 +51,7 @@
         background: rgba(0, 0, 0, 0.9);
         border: 2px solid #00ffff;
         color: #00ffff;
-        font-family: monospace;
+        font-family: 'Orbitron', sans-serif;
         font-size: 14px;
         display: none;
         z-index: 1000;
@@ -259,6 +259,10 @@
     <div id="debug-panel">
       <h3>Debug Info</h3>
       <div class="coord">Players: <span id="player-count">0</span></div>
+      <div class="coord" id="player-names-section" style="display:none;">
+        <strong>Connected Players:</strong>
+        <div id="player-names-list" style="margin-left: 10px; margin-top: 5px; font-size: 11px;"></div>
+      </div>
       <div class="coord">X: <span id="pos-x">-</span></div>
       <div class="coord">Y: <span id="pos-y">-</span></div>
       <div class="coord">CAM_X: <span id="cam-x">-</span></div>

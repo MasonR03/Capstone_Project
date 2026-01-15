@@ -175,11 +175,12 @@ function create() {
     if (myId && clientPlayers[myId]) {
       return {
         player: clientPlayers[myId],
-        allPlayers: clientPlayers
+        allPlayers: clientPlayers,
+        playerNames: playerNames
       };
     }
     // No local sprite in multiplayer mode
-    return { allPlayers: clientPlayers };
+    return { allPlayers: clientPlayers, playerNames: playerNames };
   }, this.debugGridGraphics);
 
   // physics world size
@@ -275,9 +276,8 @@ function create() {
   console.log('Test rectangle added at world center:', testRect.x, testRect.y);
   // Write word 'center' on rectangle.
   const centerText = this.add.text(testRect.x, testRect.y, 'CENTER', {
-    fontSize: '16px',
-    fill: '#ffffff',
-    fontFamily: 'monospace'
+    font: '16px Orbitron, sans-serif',
+    fill: '#ffffff'
   });
   centerText.setOrigin(0.5, 0.5);
 
@@ -381,7 +381,7 @@ function create() {
         // Update player name text position and content
         if (playerNameTexts[id]) {
           playerNameTexts[id].x = serverP.x;
-          playerNameTexts[id].y = serverP.y - 40;
+          playerNameTexts[id].y = serverP.y - 70;
           
           // Update name text in case it changed
           if (serverP.playerName) {
@@ -424,7 +424,7 @@ function create() {
 }
 
 // ~~~ Update ~~~
-function update(time, delta) {
+function update() {
   // LOCAL MOVEMENT DISABLED for multiplayer
   // Server handles all physics - client only sends input and displays results
   // This prevents the double ship issue where local and server ships were both rendered
@@ -498,12 +498,12 @@ function addOrUpdatePlayerSprite(scene, playerInfo) {
       }
 
       // Create player name text label
-      const nameText = scene.add.text(playerInfo.x, playerInfo.y - 40, playerDisplayName, {
-        font: 'bold 12px Arial',
+      const nameText = scene.add.text(playerInfo.x, playerInfo.y - 70, playerDisplayName, {
+        font: '16px Orbitron, sans-serif',
         fill: '#00ffff',
-        backgroundColor: '#000000',
-        padding: { x: 4, y: 2 },
-        align: 'center'
+        align: 'center',
+        stroke: '#000000',
+        strokeThickness: 2
       });
       nameText.setOrigin(0.5, 0.5);
       nameText.setDepth(2);
@@ -525,7 +525,7 @@ function addOrUpdatePlayerSprite(scene, playerInfo) {
 }
 
 // Note: collectStar(...) stays unused in multiplayer mode
-function collectStar(scene, starIndex) {
+function collectStar() {
   // local demo only
 }
 
