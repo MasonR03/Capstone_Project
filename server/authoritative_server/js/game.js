@@ -91,7 +91,7 @@ function initializeServer(io) {
   // Handle client connections
   io.on('connection', (socket) => {
     removeStalePlayers(io);
-    console.log('🎮 User connected:', socket.id);
+    console.log('🎮 User connected:', socket.id.substring(0, 8));
 
     // Create player
     const startX = Math.floor(Math.random() * (WORLD_WIDTH - 100)) + 50;
@@ -99,6 +99,7 @@ function initializeServer(io) {
 
     players[socket.id] = {
       playerId: socket.id,
+      playerName: null,  // Will be set when client sends setPlayerName
       x: startX,
       y: startY,
       rotation: 0,
@@ -141,6 +142,14 @@ function initializeServer(io) {
     // Notify others
     socket.broadcast.emit('newPlayer', players[socket.id]);
 
+    // Handle player name from client
+    socket.on('setPlayerName', (playerName) => {
+      if (players[socket.id] && playerName) {
+        players[socket.id].playerName = playerName;
+        console.log('👤 Player', socket.id.substring(0, 8), 'set name to:', playerName);
+      }
+    });
+
     // Handle input
     socket.on('playerInput', (input) => {
       if (players[socket.id]) {
@@ -158,7 +167,8 @@ function initializeServer(io) {
 
     // Handle disconnect
     socket.on('disconnect', () => {
-      console.log('👋 User disconnected:', socket.id);
+      const playerName = players[socket.id]?.playerName || socket.id.substring(0, 8);
+      console.log('👋 User disconnected:', playerName);
 
       // Clean up physics body
       const body = playerBodies.get(socket.id);
@@ -206,7 +216,8 @@ function handleStarCollection(io, playerBody, starBody) {
   const star = gameState.stars.find(s => s.id === starBody.starId);
   if (!star) return;
 
-  console.log('⭐⭐⭐ STAR', star.id, 'COLLECTED by', player.playerId, '! Team:', player.team);
+  const playerName = player.playerName || player.playerId;
+  console.log('⭐⭐⭐ STAR', star.id, 'COLLECTED by', playerName, '! Team:', player.team);
 
   // score
   gameState.scores[player.team] += 10;
