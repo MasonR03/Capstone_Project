@@ -37,7 +37,9 @@ temp/
 # Other
 *.sqlite
 *.sqlite3
-
+/.claude/
+AGENTS.md
+CLAUDE.md
 # Ignore local server logs
 /server/logs/
 
