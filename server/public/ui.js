@@ -85,19 +85,19 @@
     // Frame PNG (on top)
     frameImg = scene.add.image(0, 0, 'hudBars').setOrigin(0, 0);
 
-    // HP label in gap
-    hpLabel = scene.add.text(HP_LABEL_X, HP_LABEL_Y, 'HP', {
-      fontSize: '7px',
-      color: '#ffffff',
-      font: 'Orbitron, sans-serif'
-    }).setOrigin(0, 0.5);
+    // // HP label in gap
+    // hpLabel = scene.add.text(HP_LABEL_X, HP_LABEL_Y, 'HP', {
+    //   fontSize: '7px',
+    //   color: '#ffffff',
+    //   fontFamily: 'monospace'
+    // }).setOrigin(0, 0.5);
 
-    // XP label in gap
-    xpLabel = scene.add.text(XP_LABEL_X, XP_LABEL_Y, 'XP', {
-      fontSize: '7px',
-      color: '#ffffff',
-      font: 'Orbitron, sans-serif'
-    }).setOrigin(0, 0.5);
+    // // XP label in gap
+    // xpLabel = scene.add.text(XP_LABEL_X, XP_LABEL_Y, 'XP', {
+    //   fontSize: '7px',
+    //   color: '#ffffff',
+    //   ffontFamily: 'monospace'
+    // }).setOrigin(0, 0.5);
 
     // HP numbers centered on bar
     hpText = scene.add.text(HP_BAR_CX, HP_CENTER_Y, '0/0', {
@@ -114,7 +114,8 @@
     }).setOrigin(0.5, 0.5);
 
     // Add in back-to-front order
-    hud.add([hpFill, xpFill, frameImg, hpLabel, xpLabel, hpText, xpText]);
+     //hpLabel, //xpLabel,
+    hud.add([hpFill, xpFill, frameImg, hpText, xpText]);
 
     // Score (separate)
     scoreText = scene.add.text(SCORE_X, SCORE_Y, 'Score: R 0 | B 0', {
