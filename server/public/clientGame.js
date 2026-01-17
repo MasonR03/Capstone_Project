@@ -1,3 +1,6 @@
+// public/clientGame.js
+// Multiplayer client w/ login-gated start + keyboard class picker + HUD + stars + camera follow
+
 // ~~~ Socket connection (delayed until login) ~~~
 let socket = null;
 
@@ -5,70 +8,33 @@ let socket = null;
 const clientPlayers = {};   // playerId -> Phaser sprite
 const playerNames = {};     // playerId -> player name
 const playerNameTexts = {}; // playerId -> Phaser text object
-let myId = null;            // Player name (set from login)
+
+let myId = null;            // display id (player name)
 let socketId = null;        // socket.id from server
-let pendingStarPositions = null; // Store star positions received before scene creation
-let UIHud = null; // controller from UI.init
 
-// Initialize socket connection after login
-function initializeSocket() {
-  if (socket) return; // Already initialized
-  
-  socket = io({
-    transports: ['websocket']
-  });
+let pendingStarPositions = null; // stars before scene exists
+let UIHud = null;                // controller from UI.init
 
-  // Set myId from playerName (from login.js)
-  socket.on('connect', function() {
-    socketId = socket.id;
-    // Use the player name from login as the myId for display purposes
-    if (!myId && typeof playerName !== 'undefined' && playerName) {
-      myId = playerName;
-    } else if (!myId) {
-      myId = socket.id;
-    }
-    console.log('✅ Connected to server');
-    console.log('🆔 My player ID (name):', myId);
-    console.log('🔌 Socket ID:', socketId);
-    
-    // Send player name to server for identification
-    socket.emit('setPlayerName', myId);
-  });
-  
-  // Set up other socket listeners
-  setupSocketListeners();
-}
+// ~~~~ class gate ~~~~
+let classChosen = false;
+let chosenClassKey = null;
 
-// Set up global handler for stars that works before Phaser scene is created
-function setupSocketListeners() {
-  socket.on('starsLocation', function (starsInfo) {
-    console.log('📍 Global: Star locations received from server:', starsInfo);
-    latestStars = starsInfo || latestStars; // For the mini-map to pick up on star location
-    if (starSprites && starSprites.length > 0) {
-      // Stars already created, update them directly
-      starsInfo.forEach((star, index) => {
-        if (starSprites[index]) {
-          starSprites[index].setPosition(star.x, star.y);
-          console.log('⭐ Global: Star', star.id, 'updated to position:', star.x, star.y);
-        }
-      });
-    } else {
-      // Stars not created yet, store for later
-      console.log('📌 Global: Storing star positions for when sprites are created');
-      pendingStarPositions = starsInfo;
-    }
-  });
+// ~~~~ ship classes ~~~~
+const SHIP_CLASSES = {
+  hunter: {
+    name: 'Hunter',
+    spriteKey: 'ship_hunter',
+    stats: { maxHp: 90, speed: 260, accel: 220 }
+  },
+  tanker: {
+    name: 'Tanker',
+    spriteKey: 'ship_tanker',
+    stats: { maxHp: 160, speed: 180, accel: 160 }
+  }
+};
+const DEFAULT_CLASS = 'hunter';
 
- socket.on('updateScore', function (scores) {
-    serverScores = scores || { red: 0, blue: 0 };
-    UIHud && UIHud.updateScores(serverScores);
-  });
-}
-
-// Border buffer distance - how far from edge to stop ships
-const BORDER_BUFFER = 20;
-
-// server broadcast scores (we'll also edit this locally for solo mode)
+// server broadcast scores
 let serverScores = { red: 0, blue: 0 };
 
 // HUD stats for me
@@ -79,19 +45,19 @@ let localPlayerStats = {
   maxXp: 100
 };
 
-// input refs and HUD refs
+// input refs
 let cursors;
-// (UI is now in public/ui.js)
-let starSprites = [];  // Array to hold multiple star sprites
 
-// local fallback player (DISABLED for multiplayer - causes double ship issue)
-let localPlayerSprite = null;
+// stars
+let starSprites = [];
+let latestStars = [];
 
-let latestStars = [];   // <= stars array for minimap
-
-// world bounds we'll reuse
+// world bounds
 const WORLD_W = 2000;
 const WORLD_H = 2000;
+
+// ~~~~ camera follow gate ~~~~
+let cameraFollowSet = false;
 
 // ~~~ Phaser client config ~~~
 const clientConfig = {
@@ -102,10 +68,7 @@ const clientConfig = {
   backgroundColor: '#000000',
   physics: {
     default: 'arcade',
-    arcade: {
-      debug: false,
-      gravity: { y: 0 }
-    }
+    arcade: { debug: false, gravity: { y: 0 } }
   },
   scene: {
     preload: preload,
@@ -116,24 +79,24 @@ const clientConfig = {
 
 let game = null;
 
-// Wait for login before starting the game
-document.addEventListener('DOMContentLoaded', function() {
-  // Check if login is complete every 100ms
-  const loginCheckInterval = setInterval(function() {
-    if (typeof window.loginComplete !== 'undefined' && window.loginComplete === true && typeof playerName !== 'undefined' && playerName) {
+// ~~~~ start after login ~~~~
+document.addEventListener('DOMContentLoaded', function () {
+  const loginCheckInterval = setInterval(function () {
+    if (
+      typeof window.loginComplete !== 'undefined' &&
+      window.loginComplete === true &&
+      typeof playerName !== 'undefined' &&
+      playerName
+    ) {
       clearInterval(loginCheckInterval);
-      console.log('🎮 Login complete. Initializing game and socket...');
-      
-      // Now initialize socket with player name
+      console.log('🎮 Login complete. Initializing socket + game...');
+
       initializeSocket();
-      
-      // Start the game
       game = new Phaser.Game(clientConfig);
     }
   }, 100);
-  
-  // Safety timeout after 30 seconds (in case of issues)
-  setTimeout(function() {
+
+  setTimeout(function () {
     if (!game) {
       console.warn('⚠️ Login timeout - starting game anyway');
       if (!socket) initializeSocket();
@@ -143,136 +106,103 @@ document.addEventListener('DOMContentLoaded', function() {
   }, 30000);
 });
 
-// ~~~ Preload ~~~
-function preload() {
-  console.log('Preloading assets...');
+// ~~~~ socket init ~~~~
+function initializeSocket() {
+  if (socket) return;
 
-  this.load.image('ship', 'assets/spaceShips_001.png');
-  this.load.image('star', 'assets/Star.png');
+  socket = io({ transports: ['websocket'] });
 
-  // this.load.image('otherPlayer', 'assets/enemyBlack5.png'); // optional
-  //bars
-  this.load.image('hudBars', 'assets/Bar.png');
+  socket.on('connect', function () {
+    socketId = socket.id;
 
-  this.load.on('complete', () => {
-    console.log('Assets loaded successfully');
+    // Use playerName (from login.js) if present
+    if (!myId && typeof playerName !== 'undefined' && playerName) {
+      myId = playerName;
+    } else if (!myId) {
+      myId = socket.id;
+    }
+
+    console.log('✅ Connected to server');
+    console.log('🆔 My player name:', myId);
+    console.log('🔌 Socket ID:', socketId);
+
+    socket.emit('setPlayerName', myId);
+
+    // If class already picked, send it now
+    if (classChosen && chosenClassKey) {
+      socket.emit('chooseClass', { classKey: chosenClassKey });
+    }
   });
 
-  this.load.on('loaderror', (file) => {
-    console.error('Error loading asset:', file.key, file.url);
+  setupSocketListeners();
+}
+
+// ~~~~ socket listeners ~~~~
+function setupSocketListeners() {
+  socket.on('starsLocation', function (starsInfo) {
+    console.log('📍 Star locations received:', starsInfo);
+    latestStars = starsInfo || latestStars;
+
+    if (starSprites && starSprites.length > 0) {
+      starsInfo.forEach((star, index) => {
+        if (starSprites[index]) starSprites[index].setPosition(star.x, star.y);
+      });
+    } else {
+      pendingStarPositions = starsInfo;
+    }
+  });
+
+  socket.on('updateScore', function (scores) {
+    serverScores = scores || { red: 0, blue: 0 };
+    UIHud && UIHud.updateScores(serverScores);
   });
 }
 
-// ~~~ Create ~~~
+// ~~~~ Preload ~~~
+function preload() {
+  console.log('Preloading assets...');
+
+  // ships
+  this.load.image('ship_hunter', 'assets/HunterShip.png');
+  this.load.image('ship_tanker', 'assets/TankerShip.png');
+
+  // star + hud
+  this.load.image('star', 'assets/Star.png');
+  this.load.image('hudBars', 'assets/Bar.png');
+
+  this.load.on('complete', () => console.log('Assets loaded successfully'));
+  this.load.on('loaderror', (file) => console.error('Error loading asset:', file.key, file.url));
+}
+
+// ~~~~ Create ~~~~
 function create() {
-  //system check
   console.log('clientGame.js create() is running!');
 
   const self = this;
-
-  // Create graphics object for debug gridlines
-  this.debugGridGraphics = this.add.graphics();
-  this.debugGridGraphics.setDepth(-1); // Behind everything else
-  this.debugGridGraphics.setVisible(false); // Hidden by default
-
-  // Initialize debug tools
-  DebugTools.init(game, () => {
-    // Callback to get current player and all players
-    if (myId && clientPlayers[myId]) {
-      return {
-        player: clientPlayers[myId],
-        allPlayers: clientPlayers,
-        playerNames: playerNames
-      };
-    }
-    // No local sprite in multiplayer mode
-    return { allPlayers: clientPlayers, playerNames: playerNames };
-  }, this.debugGridGraphics);
 
   // physics world size
   this.physics.world.setBounds(0, 0, WORLD_W, WORLD_H);
   this.cameras.main.setBounds(0, 0, WORLD_W, WORLD_H);
 
-  // Draw debug gridlines (100x100 squares)
-  drawDebugGrid(this.debugGridGraphics, WORLD_W, WORLD_H);
+  // camera start
+  this.cameras.main.centerOn(WORLD_W / 2, WORLD_H / 2);
+  this.cameras.main.setZoom(1.0);
 
-  // Add dark red border visualization
-  const borderWidth = 30;
-  const borderColor = 0x880000;
-
-  // Top border
-  this.add.rectangle(WORLD_W / 2, borderWidth / 2, WORLD_W, borderWidth, borderColor);
-  // Bottom border
-  this.add.rectangle(WORLD_W / 2, WORLD_H - borderWidth / 2, WORLD_W, borderWidth, borderColor);
-  // Left border
-  this.add.rectangle(borderWidth / 2, WORLD_H / 2, borderWidth, WORLD_H, borderColor);
-  // Right border
-  this.add.rectangle(WORLD_W - borderWidth / 2, WORLD_H / 2, borderWidth, WORLD_H, borderColor);
-
-  // group of networked players (from server if/when we get them)
-  this.playersGroup = this.physics.add.group();
-
-  // Sets up the ui
-  // OLD: this.ui = UI.create(...)
+  // minimap
   this.minimap = MiniMap.create(this, WORLD_W, WORLD_H, { size: 160, radius: 70, margin: 20 });
 
-
-  // — UI init —
+  // HUD
   UIHud = window.UI && window.UI.init(this, {
     world: { width: WORLD_W, height: WORLD_H },
-    minimap: { radius: 70 } // you can tweak later
+    minimap: { radius: 70 }
   });
   if (!UIHud) {
-    console.warn('UI module not found. Did you include public/ui.js before clientGame.js?');
+    console.warn('UI module not found. Did you include public/ui/ui.js before clientGame.js?');
   } else {
     UIHud.updateScores(serverScores);
   }
 
-  // create 5 star sprites (visual only, server handles collection)
-  // Initialize at default positions, server will update with actual positions
-  for (let i = 0; i < 5; i++) {
-    const star = this.add.image(
-      WORLD_W / 2 + (i * 100 - 200),  // Spread them out initially
-      WORLD_H / 2,
-      'star'
-    );
-    star.setOrigin(0.5, 0.5);
-    star.setDepth(0); // Behind players
-    //plays star animation
-    star.setScale(1.15);
-    star.setAlpha(1.0);
-
-    const tw = this.tweens.add({
-      targets: star,
-      scale: 1.35,
-      alpha: 0.75,
-      duration: 700,
-      yoyo: true,
-      repeat: -1,
-      ease: 'Sine.easeInOut'
-    });
-
-
-    console.log('Tween object:', tw);
-    console.log('Tween targets:', tw && tw.targets);
-
-    starSprites.push(star);
-    console.log('⭐ Initial star', i, 'created at:', star.x, star.y);
-  }
-
-  // If we received star positions before creating sprites (from global handler), apply them now
-  if (pendingStarPositions) {
-    console.log('📍 Applying pending star positions from global handler');
-    pendingStarPositions.forEach((star, index) => {
-      if (starSprites[index]) {
-        starSprites[index].setPosition(star.x, star.y);
-        console.log('⭐ Star', star.id, 'updated to position:', star.x, star.y);
-      }
-    });
-    pendingStarPositions = null;
-  }
-
-  // keyboard controls
+  // keyboard controls (movement)
   cursors = this.input.keyboard.addKeys({
     left: Phaser.Input.Keyboard.KeyCodes.LEFT,
     right: Phaser.Input.Keyboard.KeyCodes.RIGHT,
@@ -282,72 +212,65 @@ function create() {
 
   // fullscreen toggle with F
   this.input.keyboard.on('keydown-F', () => {
-    if (this.scale.isFullscreen) {
-      this.scale.stopFullscreen();
-    } else {
-      this.scale.startFullscreen();
-    }
+    if (this.scale.isFullscreen) this.scale.stopFullscreen();
+    else this.scale.startFullscreen();
   });
 
-  // For multiplayer, camera will follow authoritative sprite when it's created
-  // Set initial camera position to center of world while waiting for player
-  this.cameras.main.centerOn(WORLD_W / 2, WORLD_H / 2);
-  this.cameras.main.setZoom(1.0);
+  // stars
+  for (let i = 0; i < 5; i++) {
+    const star = this.add.image(WORLD_W / 2 + (i * 100 - 200), WORLD_H / 2, 'star');
+    star.setOrigin(0.5, 0.5);
+    star.setDepth(0);
+    star.setScale(1.15);
+    star.setAlpha(1.0);
 
-  // Add a test rectangle to ensure rendering is working
-  const testRect = this.add.rectangle(WORLD_W / 2, WORLD_H / 2, 100, 100, 0x000080);
-  testRect.setStrokeStyle(2, 0xffffff);
-  console.log('Test rectangle added at world center:', testRect.x, testRect.y);
-  // Write word 'center' on rectangle.
-  const centerText = this.add.text(testRect.x, testRect.y, 'CENTER', {
-    font: '16px Orbitron, sans-serif',
-    fill: '#ffffff'
-  });
-  centerText.setOrigin(0.5, 0.5);
-
-  // ~~~ SOCKET HANDLERS ~~~
-  socket.on('currentPlayers', function (players) {
-    // Use socket.id directly if myId isn't set yet
-    if (!myId) {
-      myId = socket.id;
-      console.log('Setting myId from socket.id:', myId);
-    }
-
-    console.log('Received currentPlayers event with', Object.keys(players).length, 'players');
-    console.log('My socket ID is:', myId, 'Socket.id is:', socket.id);
-    console.log('Player IDs received:', Object.keys(players));
-
-    Object.keys(players).forEach(function (id) {
-      // Create/update sprites for all players
-      const sprite = addOrUpdatePlayerSprite(self, players[id]);
-
-      // If this is our player, set up camera follow (check both myId and socket.id)
-      if (id === myId || id === socket.id) {
-        console.log('Found my player! Setting camera to follow:', id);
-        myId = id; // Ensure myId is set
-
-        if (sprite) {
-          self.cameras.main.startFollow(sprite, true, 0.1, 0.1);
-          console.log('Camera now following sprite at:', sprite.x, sprite.y);
-        } else {
-          console.error('ERROR: Could not find sprite for camera follow!');
-        }
-      }
+    // subtle twinkle
+    this.tweens.add({
+      targets: star,
+      scale: 1.35,
+      alpha: 0.75,
+      duration: 700,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut'
     });
 
-    // Double-check we found our player
-    if (!clientPlayers[myId] && !clientPlayers[socket.id]) {
-      console.warn('WARNING: Did not find our player in currentPlayers!');
-      console.warn('Our ID:', myId, 'Socket ID:', socket.id);
-      console.warn('Available IDs:', Object.keys(clientPlayers));
+    starSprites.push(star);
+  }
 
-      // Fallback: follow the first player if we can't find ours
-      const firstPlayerId = Object.keys(clientPlayers)[0];
-      if (firstPlayerId) {
-        console.log('Fallback: Following first available player:', firstPlayerId);
-        self.cameras.main.startFollow(clientPlayers[firstPlayerId], true, 0.1, 0.1);
-      }
+  // apply pending stars
+  if (pendingStarPositions) {
+    pendingStarPositions.forEach((star, index) => {
+      if (starSprites[index]) starSprites[index].setPosition(star.x, star.y);
+    });
+    pendingStarPositions = null;
+  }
+
+  // ~~~~ class picker (keyboard) ~~~~
+  openClassPickerKeyboard(this, (pickedKey) => {
+    chosenClassKey = SHIP_CLASSES[pickedKey] ? pickedKey : DEFAULT_CLASS;
+    classChosen = true;
+
+    console.log('Picked class:', chosenClassKey);
+
+    if (socket && socket.connected) {
+      socket.emit('chooseClass', { classKey: chosenClassKey });
+    } else {
+      console.warn('Socket not ready, will send class on connect');
     }
+  });
+
+  // ~~~~ SOCKET HANDLERS ~~~~
+  socket.on('currentPlayers', function (players) {
+    console.log('currentPlayers:', Object.keys(players).length);
+
+    Object.keys(players).forEach(function (id) {
+      const p = players[id];
+      addOrUpdatePlayerSprite(self, p);
+    });
+
+    // ~~~~ ensure camera follow after batch create ~~~~
+    ensureCameraFollow(self, players);
   });
 
   socket.on('newPlayer', function (playerInfo) {
@@ -359,74 +282,41 @@ function create() {
       clientPlayers[playerId].destroy();
       delete clientPlayers[playerId];
     }
-  });
-
-  // Keep backward compatibility for single star updates (if needed)
-  socket.on('starLocation', function (starInfo) {
-    console.log('📍 Single star location received (legacy):', starInfo);
+    if (playerNameTexts[playerId]) {
+      playerNameTexts[playerId].destroy();
+      delete playerNameTexts[playerId];
+    }
+    delete playerNames[playerId];
   });
 
   socket.on('playerUpdates', function (serverPlayers) {
-    // Log periodically to avoid spam
-    if (!self.lastUpdateLog || Date.now() - self.lastUpdateLog > 1000) {
-      console.log('playerUpdates: Updating', Object.keys(serverPlayers).length, 'players');
-      console.log('My ID is:', myId, 'Socket.id is:', socket.id);
-      console.log('Player IDs from server:', Object.keys(serverPlayers));
-      self.lastUpdateLog = Date.now();
-    }
-
+    // create/update everyone
     Object.keys(serverPlayers).forEach(function (id) {
       const serverP = serverPlayers[id];
 
-      // Create sprite if it doesn't exist (handles late-joining players)
-      if (!clientPlayers[id]) {
-        const displayName = serverP.playerName || id;
-        console.log('Late player join detected, creating sprite for:', displayName);
-        addOrUpdatePlayerSprite(self, serverP);
+      if (!clientPlayers[id]) addOrUpdatePlayerSprite(self, serverP);
 
-        // Check if this is our player and set camera
-        if (id === socket.id && !self.cameraSet) {
-          const displayName = serverP.playerName || id;
-          console.log('This is MY player! Setting camera to follow:', displayName);
-          self.cameras.main.startFollow(clientPlayers[id], true, 0.1, 0.1);
-          self.cameraSet = true;
-          myId = id;
-        }
-      }
-
-      // Update all sprites with server authoritative positions
-      if (clientPlayers[id]) {
-        const sprite = clientPlayers[id];
-        // Server is the single source of truth for positions
+      const sprite = clientPlayers[id];
+      if (sprite) {
+        // swap ship sprite if class changed
+        applyClassVisual(sprite, serverP.classKey);
         sprite.x = serverP.x;
         sprite.y = serverP.y;
         sprite.rotation = serverP.rotation;
 
-         // Update player name text position and content
-        if (playerNameTexts[id]) {
-          playerNameTexts[id].x = serverP.x;
-          playerNameTexts[id].y = serverP.y - 70;
-          
-          // Update name text in case it changed
-          if (serverP.playerName) {
-            playerNameTexts[id].setText(serverP.playerName);
-            playerNames[id] = serverP.playerName;
-          }
-        }
-
-        // Make sure sprite stays visible
-        if (!sprite.visible) {
-          const displayName = serverP.playerName || id;
-          console.warn('Sprite was invisible, making visible:', displayName);
-          sprite.setVisible(true);
+        const nt = playerNameTexts[id];
+        if (nt) {
+          nt.x = serverP.x;
+          nt.y = serverP.y - 70;
+          if (serverP.playerName) nt.setText(serverP.playerName);
         }
       }
 
-      // Update local HUD stats for our player (and refresh HP/XP bar)
-      if (id === myId) {
-        if (serverP.hp !== undefined)    localPlayerStats.hp = serverP.hp;
+      // update my HUD stats
+      if (id === socketId) {
+        if (serverP.hp !== undefined) localPlayerStats.hp = serverP.hp;
         if (serverP.maxHp !== undefined) localPlayerStats.maxHp = serverP.maxHp;
-        if (serverP.xp !== undefined)    localPlayerStats.xp = serverP.xp;
+        if (serverP.xp !== undefined) localPlayerStats.xp = serverP.xp;
         if (serverP.maxXp !== undefined) localPlayerStats.maxXp = serverP.maxXp;
 
         UIHud && UIHud.updateHpXp({
@@ -438,156 +328,257 @@ function create() {
       }
     });
 
-    // tell UI to redraw minimap with newest players/stars
+    // ~~~~ ensure camera follow (timing-safe) ~~~~
+    ensureCameraFollow(self, serverPlayers);
+
     UIHud && UIHud.updateMinimap({
       players: serverPlayers,
-      myId,
+      myId: socketId,
       stars: (starSprites || []).map((s, i) => ({ id: i, x: s.x, y: s.y }))
     });
   });
 }
 
-// ~~~ Update ~~~
+// ~~~~ Update ~~~~
 function update() {
-  // LOCAL MOVEMENT DISABLED for multiplayer
-  // Server handles all physics - client only sends input and displays results
-  // This prevents the double ship issue where local and server ships were both rendered
+  // ~~~~ freeze movement until class chosen ~~~~
+  if (!classChosen) return;
 
-  // SEND INPUT STATE TO SERVER (only when connected with valid ID)
-  if (myId && socket.connected) {
+  // SEND INPUT STATE TO SERVER
+  if (socket && socketId && socket.connected) {
     const inputPayload = {
-      left: cursors.left.isDown,
-      right: cursors.right.isDown,
-      up: cursors.up.isDown,
-      down: cursors.down.isDown
+      left: !!cursors.left.isDown,
+      right: !!cursors.right.isDown,
+      up: !!cursors.up.isDown,
+      down: !!cursors.down.isDown
     };
     socket.emit('playerInput', inputPayload);
   }
 
-  // Re-anchor minimap in case the camera resizes (fullscreen, etc.)
+  // minimap follow
   MiniMap.anchor(this.minimap, this, { size: 160, margin: 20 });
+  MiniMap.update(this.minimap, clientPlayers, latestStars, socketId);
 
-  // Feed latest data so it follows the player and clamps off-screen dots
-  MiniMap.update(this.minimap, clientPlayers, latestStars, myId);
-
-  // Keep HUD aligned & refreshed (your existing HUD API)
+  // HUD tick
   UIHud && UIHud.tick(this.cameras.main);
   UIHud && UIHud.updateMinimap?.({
     players: clientPlayers,
-    myId,
+    myId: socketId,
     stars: (starSprites || []).map((s, i) => ({ id: i, x: s.x, y: s.y }))
   });
 }
 
-// ~~~ Helpers ~~~
+// ~~~~ camera follow helper ~~~~
+function ensureCameraFollow(scene, playersObj) {
+  if (cameraFollowSet) return;
+  if (!scene || !scene.cameras || !scene.cameras.main) return;
+  if (!socketId) return;
+
+  const mine = clientPlayers[socketId];
+  if (mine) {
+    scene.cameras.main.startFollow(mine, true, 0.12, 0.12);
+    cameraFollowSet = true;
+    console.log('📷 Camera now following my sprite:', socketId);
+    return;
+  }
+
+  // fallback: if server uses different id keys, try to find a player entry matching socketId
+  if (playersObj && playersObj[socketId] && clientPlayers[socketId]) {
+    scene.cameras.main.startFollow(clientPlayers[socketId], true, 0.12, 0.12);
+    cameraFollowSet = true;
+    console.log('📷 Camera following (fallback):', socketId);
+    return;
+  }
+
+  // last-resort fallback: follow first player if ours not created yet
+  const anyId = Object.keys(clientPlayers)[0];
+  if (anyId && clientPlayers[anyId]) {
+    scene.cameras.main.startFollow(clientPlayers[anyId], true, 0.12, 0.12);
+    cameraFollowSet = true;
+    console.warn('📷 Could not find my sprite yet, following first player:', anyId);
+  }
+}
+
+// ~~~~ class -> texture helper ~~~~
+function applyClassVisual(sprite, classKey) {
+  const key = SHIP_CLASSES[classKey] ? classKey : DEFAULT_CLASS;
+  const cfg = SHIP_CLASSES[key] || SHIP_CLASSES[DEFAULT_CLASS];
+
+  // Only swap if needed
+  if (sprite._classKey !== key) {
+    sprite.setTexture(cfg.spriteKey);
+    sprite.setDisplaySize(53, 40);
+    sprite._classKey = key;
+  }
+}
+
+// ~~~~ sprite helper ~~~~
 function addOrUpdatePlayerSprite(scene, playerInfo) {
-  let sprite = clientPlayers[playerInfo.playerId];
   const playerId = playerInfo.playerId;
-  const playerDisplayName = playerInfo.playerName || playerInfo.playerId;
+  let sprite = clientPlayers[playerId];
+
+  const classKey = SHIP_CLASSES[playerInfo.classKey] ? playerInfo.classKey : DEFAULT_CLASS;
+  const cfg = SHIP_CLASSES[classKey] || SHIP_CLASSES[DEFAULT_CLASS];
 
   if (!sprite) {
-    console.log('Creating sprite for player:', playerDisplayName, 'at', playerInfo.x, playerInfo.y);
+    console.log('Creating sprite for:', playerInfo.playerName || playerId, 'class:', classKey);
 
-    try {
-      // Try to use the ship texture
-      if (scene.textures.exists('ship')) {
-        sprite = scene.add.sprite(playerInfo.x, playerInfo.y, 'ship');
-        sprite.setDisplaySize(53, 40);
-        console.log('Ship texture loaded successfully');
-      } else {
-        // Fallback: create a colored rectangle if texture not found
-        console.warn('Ship texture not found, using fallback rectangle');
-        sprite = scene.add.rectangle(playerInfo.x, playerInfo.y, 53, 40);
-      }
+    // ship sprite
+    sprite = scene.add.sprite(playerInfo.x, playerInfo.y, cfg.spriteKey);
+    sprite._classKey = classKey;
+    sprite.setOrigin(0.5, 0.5);
+    sprite.setDisplaySize(53, 40);
 
-      sprite.setOrigin(0.5, 0.5);
+    // tint by team
+    if (playerInfo.team === 'red') sprite.setTint(0xff4444);
+    else if (playerInfo.team === 'blue') sprite.setTint(0x4444ff);
 
-      // tint by team
-      if (playerInfo.team === 'red') {
-        sprite.setTint(0xff4444);
-      } else if (playerInfo.team === 'blue') {
-        sprite.setTint(0x4444ff);
-      }
+    sprite.setDepth(1);
+    sprite.setVisible(true);
+    sprite.setActive(true);
 
-      // Make sure sprite is visible
-      sprite.setVisible(true);
-      sprite.setDepth(1);
-      sprite.setActive(true);
+    clientPlayers[playerId] = sprite;
 
-       clientPlayers[playerId] = sprite;
+    // name label
+    if (playerInfo.playerName) playerNames[playerId] = playerInfo.playerName;
 
-      // Store player name
-      if (playerInfo.playerName) {
-        playerNames[playerId] = playerInfo.playerName;
-      }
-
-      // Create player name text label
-      const nameText = scene.add.text(playerInfo.x, playerInfo.y - 70, playerDisplayName, {
-        font: '16px Orbitron, sans-serif',
-        fill: '#00ffff',
-        align: 'center',
-         stroke: '#000000',
-        strokeThickness: 2
-      });
-      nameText.setOrigin(0.5, 0.5);
-      nameText.setDepth(2);
-      playerNameTexts[playerId] = nameText;
-
-      // Set initial position and rotation
-      sprite.x = playerInfo.x;
-      sprite.y = playerInfo.y;
-      sprite.rotation = playerInfo.rotation || 0;
-
-       console.log('Sprite created successfully for:', playerDisplayName);
-    } catch (error) {
-      console.error('Error creating sprite:', error);
-    }
+    const nameText = scene.add.text(playerInfo.x, playerInfo.y - 70, playerInfo.playerName || playerId, {
+      font: '16px Orbitron, sans-serif',
+      fill: '#00ffff',
+      align: 'center',
+      stroke: '#000000',
+      strokeThickness: 2
+    });
+    nameText.setOrigin(0.5, 0.5);
+    nameText.setDepth(2);
+    playerNameTexts[playerId] = nameText;
   }
-  // Position updates will happen in playerUpdates handler
 
   return sprite;
 }
 
-// Note: collectStar(...) stays unused in multiplayer mode
-function collectStar() {
-  // local demo only
-}
+// ~~~~ class picker (keyboard only) ~~~~
+function openClassPickerKeyboard(scene, onPick) {
+  console.log('~~~ openClassPickerKeyboard called ~~~');
 
-function safeDiv(n, d) {
-  if (!d || d === 0) return 0;
-  return n / d;
-}
+  // stop login input eating keys
+  try {
+    if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+    window.focus && window.focus();
+  } catch (e) {}
 
-// Draw debug gridlines (100x100 squares)
-function drawDebugGrid(graphics, worldWidth, worldHeight) {
-  graphics.clear();
-  graphics.lineStyle(1, 0x444444, 0.3);
+  const cam = scene.cameras.main;
+  const overlay = scene.add.container(0, 0).setScrollFactor(0).setDepth(999999);
 
-  // Draw lines
-  for (let x = 0; x <= worldWidth; x += 100) {
-    graphics.moveTo(x, 0);
-    graphics.lineTo(x, worldHeight);
+  const dim = scene.add.rectangle(0, 0, cam.width, cam.height, 0x000000, 0.80)
+    .setOrigin(0, 0);
+  overlay.add(dim);
+
+  const title = scene.add.text(cam.width / 2, 80, 'Choose Your Ship', {
+    fontSize: '26px',
+    fill: '#ffffff',
+    fontFamily: 'monospace'
+  }).setOrigin(0.5, 0.5);
+  overlay.add(title);
+
+  const hint = scene.add.text(
+    cam.width / 2,
+    112,
+    'P/W up   L/S down   ENTER pick   ESC cancel',
+    { fontSize: '14px', fill: '#cccccc', fontFamily: 'monospace' }
+  ).setOrigin(0.5, 0.5);
+  overlay.add(hint);
+
+  const keys = Object.keys(SHIP_CLASSES);
+  if (!keys.length) {
+    overlay.destroy();
+    onPick(DEFAULT_CLASS);
+    return;
   }
 
-  for (let y = 0; y <= worldHeight; y += 100) {
-    graphics.moveTo(0, y);
-    graphics.lineTo(worldWidth, y);
-  }
+  let idx = 0;
+  const rows = [];
+  const startY = 180;
 
-  // Add coordinate labels at grid intersections (every 500 units)
-  graphics.lineStyle(1, 0x666666, 0.5); // Slightly brighter for major gridlines
-  for (let x = 0; x <= worldWidth; x += 500) {
-    for (let y = 0; y <= worldHeight; y += 500) {
-      if (x > 0) {
-        graphics.moveTo(x, 0);
-        graphics.lineTo(x, worldHeight);
-      }
-      if (y > 0) {
-        graphics.moveTo(0, y);
-        graphics.lineTo(worldWidth, y);
-      }
+  keys.forEach((key, i) => {
+    const cfg = SHIP_CLASSES[key];
+    const y = startY + i * 150;
+
+    const row = scene.add.container(cam.width / 2, y);
+    overlay.add(row);
+
+    const box = scene.add.rectangle(0, 0, 520, 120, 0x111111, 0.95)
+      .setStrokeStyle(2, 0xffffff, 0.35);
+    row.add(box);
+
+    row.add(scene.add.image(-200, 0, cfg.spriteKey).setScale(1.0));
+
+    row.add(scene.add.text(-130, -26, cfg.name, {
+      fontSize: '20px',
+      fill: '#ffffff',
+      fontFamily: 'monospace'
+    }));
+
+    const st = cfg.stats;
+    row.add(scene.add.text(-130, 6, `HP ${st.maxHp}   SPD ${st.speed}   ACC ${st.accel}`, {
+      fontSize: '14px',
+      fill: '#cccccc',
+      fontFamily: 'monospace'
+    }));
+
+    const tag = scene.add.text(190, 34, '', {
+      fontSize: '14px',
+      fill: '#00ffcc',
+      fontFamily: 'monospace'
+    }).setOrigin(0.5, 0.5);
+    row.add(tag);
+
+    rows.push({ key, box, tag });
+  });
+
+  function refresh() {
+    rows.forEach((r, i) => {
+      const sel = i === idx;
+      r.box.setStrokeStyle(2, sel ? 0x00ffcc : 0xffffff, sel ? 0.9 : 0.35);
+      r.tag.setText(sel ? 'SELECTED' : '');
+    });
+  }
+  refresh();
+
+  // one reliable keydown handler
+  const kb = scene.input.keyboard;
+  const handler = (ev) => {
+    const code = ev.code;
+
+    if (code === 'KeyP' || code === 'KeyW') {
+      idx = (idx - 1 + keys.length) % keys.length;
+      refresh();
+      return;
     }
-  }
 
-  graphics.strokePath();
+    if (code === 'KeyL' || code === 'KeyS') {
+      idx = (idx + 1) % keys.length;
+      refresh();
+      return;
+    }
+
+    if (code === 'Enter' || code === 'Space') {
+      cleanup();
+      onPick(keys[idx]);
+      return;
+    }
+
+    if (code === 'Escape') {
+      cleanup();
+      onPick(DEFAULT_CLASS);
+      return;
+    }
+  };
+
+  kb.on('keydown', handler);
+
+  function cleanup() {
+    kb.off('keydown', handler);
+    overlay.destroy();
+  }
 }
