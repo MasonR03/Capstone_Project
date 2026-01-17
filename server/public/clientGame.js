@@ -1,10 +1,9 @@
-// public/clientGame.js
 // Multiplayer client w/ login-gated start + keyboard class picker + HUD + stars + camera follow
 
-// ~~~ Socket connection (delayed until login) ~~~
+// ~~~~ Socket (delayed until login) ~~~~
 let socket = null;
 
-// ~~~ Global client state ~~~
+// ~~~~ Global client state ~~~~
 const clientPlayers = {};   // playerId -> Phaser sprite
 const playerNames = {};     // playerId -> player name
 const playerNameTexts = {}; // playerId -> Phaser text object
@@ -15,11 +14,11 @@ let socketId = null;        // socket.id from server
 let pendingStarPositions = null; // stars before scene exists
 let UIHud = null;                // controller from UI.init
 
-// ~~~~ class gate ~~~~
+// ~~~~ Class gate ~~~~
 let classChosen = false;
 let chosenClassKey = null;
 
-// ~~~~ ship classes ~~~~
+// ~~~~ Ship classes ~~~~
 const SHIP_CLASSES = {
   hunter: {
     name: 'Hunter',
@@ -34,10 +33,9 @@ const SHIP_CLASSES = {
 };
 const DEFAULT_CLASS = 'hunter';
 
-// server broadcast scores
+// ~~~~ Score + HUD stats ~~~~
 let serverScores = { red: 0, blue: 0 };
 
-// HUD stats for me
 let localPlayerStats = {
   hp: 100,
   maxHp: 100,
@@ -45,21 +43,21 @@ let localPlayerStats = {
   maxXp: 100
 };
 
-// input refs
+// ~~~~ Input refs ~~~~
 let cursors;
 
-// stars
+// ~~~~ Stars ~~~~
 let starSprites = [];
 let latestStars = [];
 
-// world bounds
+// ~~~~ World bounds ~~~~
 const WORLD_W = 2000;
 const WORLD_H = 2000;
 
-// ~~~~ camera follow gate ~~~~
+// ~~~~ Camera follow gate ~~~~
 let cameraFollowSet = false;
 
-// ~~~ Phaser client config ~~~
+// ~~~~ Phaser client config ~~~~
 const clientConfig = {
   type: Phaser.AUTO,
   parent: 'game-container',
@@ -79,7 +77,7 @@ const clientConfig = {
 
 let game = null;
 
-// ~~~~ start after login ~~~~
+// ~~~~ Start after login ~~~~
 document.addEventListener('DOMContentLoaded', function () {
   const loginCheckInterval = setInterval(function () {
     if (
@@ -106,7 +104,7 @@ document.addEventListener('DOMContentLoaded', function () {
   }, 30000);
 });
 
-// ~~~~ socket init ~~~~
+// ~~~~ Socket init ~~~~
 function initializeSocket() {
   if (socket) return;
 
@@ -115,12 +113,8 @@ function initializeSocket() {
   socket.on('connect', function () {
     socketId = socket.id;
 
-    // Use playerName (from login.js) if present
-    if (!myId && typeof playerName !== 'undefined' && playerName) {
-      myId = playerName;
-    } else if (!myId) {
-      myId = socket.id;
-    }
+    if (!myId && typeof playerName !== 'undefined' && playerName) myId = playerName;
+    else if (!myId) myId = socket.id;
 
     console.log('✅ Connected to server');
     console.log('🆔 My player name:', myId);
@@ -128,23 +122,23 @@ function initializeSocket() {
 
     socket.emit('setPlayerName', myId);
 
-    // If class already picked, send it now
+    // send class (if already chosen)
     if (classChosen && chosenClassKey) {
-      socket.emit('chooseClass', { classKey: chosenClassKey });
+      emitChooseClass(chosenClassKey);
     }
   });
 
   setupSocketListeners();
 }
 
-// ~~~~ socket listeners ~~~~
+// ~~~~ Socket listeners ~~~~
 function setupSocketListeners() {
   socket.on('starsLocation', function (starsInfo) {
     console.log('📍 Star locations received:', starsInfo);
     latestStars = starsInfo || latestStars;
 
     if (starSprites && starSprites.length > 0) {
-      starsInfo.forEach((star, index) => {
+      (starsInfo || []).forEach((star, index) => {
         if (starSprites[index]) starSprites[index].setPosition(star.x, star.y);
       });
     } else {
@@ -158,7 +152,7 @@ function setupSocketListeners() {
   });
 }
 
-// ~~~~ Preload ~~~
+// ~~~~ Preload ~~~~
 function preload() {
   console.log('Preloading assets...');
 
@@ -180,9 +174,12 @@ function create() {
 
   const self = this;
 
-  // physics world size
+  // world bounds
   this.physics.world.setBounds(0, 0, WORLD_W, WORLD_H);
   this.cameras.main.setBounds(0, 0, WORLD_W, WORLD_H);
+
+  // red border visuals
+  addWorldBorders(this);
 
   // camera start
   this.cameras.main.centerOn(WORLD_W / 2, WORLD_H / 2);
@@ -202,7 +199,7 @@ function create() {
     UIHud.updateScores(serverScores);
   }
 
-  // keyboard controls (movement)
+  // movement keys
   cursors = this.input.keyboard.addKeys({
     left: Phaser.Input.Keyboard.KeyCodes.LEFT,
     right: Phaser.Input.Keyboard.KeyCodes.RIGHT,
@@ -210,7 +207,7 @@ function create() {
     down: Phaser.Input.Keyboard.KeyCodes.DOWN
   });
 
-  // fullscreen toggle with F
+  // fullscreen toggle
   this.input.keyboard.on('keydown-F', () => {
     if (this.scale.isFullscreen) this.scale.stopFullscreen();
     else this.scale.startFullscreen();
@@ -224,7 +221,6 @@ function create() {
     star.setScale(1.15);
     star.setAlpha(1.0);
 
-    // subtle twinkle
     this.tweens.add({
       targets: star,
       scale: 1.35,
@@ -246,18 +242,15 @@ function create() {
     pendingStarPositions = null;
   }
 
-  // ~~~~ class picker (keyboard) ~~~~
+  // class picker (keyboard)
   openClassPickerKeyboard(this, (pickedKey) => {
     chosenClassKey = SHIP_CLASSES[pickedKey] ? pickedKey : DEFAULT_CLASS;
     classChosen = true;
 
     console.log('Picked class:', chosenClassKey);
 
-    if (socket && socket.connected) {
-      socket.emit('chooseClass', { classKey: chosenClassKey });
-    } else {
-      console.warn('Socket not ready, will send class on connect');
-    }
+    if (socket && socket.connected) emitChooseClass(chosenClassKey);
+    else console.warn('Socket not ready, will send class on connect');
   });
 
   // ~~~~ SOCKET HANDLERS ~~~~
@@ -269,8 +262,7 @@ function create() {
       addOrUpdatePlayerSprite(self, p);
     });
 
-    // ~~~~ ensure camera follow after batch create ~~~~
-    ensureCameraFollow(self, players);
+    ensureCameraFollow(self);
   });
 
   socket.on('newPlayer', function (playerInfo) {
@@ -290,7 +282,6 @@ function create() {
   });
 
   socket.on('playerUpdates', function (serverPlayers) {
-    // create/update everyone
     Object.keys(serverPlayers).forEach(function (id) {
       const serverP = serverPlayers[id];
 
@@ -298,8 +289,15 @@ function create() {
 
       const sprite = clientPlayers[id];
       if (sprite) {
-        // swap ship sprite if class changed
-        applyClassVisual(sprite, serverP.classKey);
+        // ~~~~ class sprite selection ~~~~
+        // If server doesn’t send classKey, we still show OUR chosen class locally.
+        const effectiveClassKey =
+          (serverP && SHIP_CLASSES[serverP.classKey] ? serverP.classKey : null) ||
+          (id === socketId ? chosenClassKey : null) ||
+          DEFAULT_CLASS;
+
+        applyClassVisual(sprite, effectiveClassKey);
+
         sprite.x = serverP.x;
         sprite.y = serverP.y;
         sprite.rotation = serverP.rotation;
@@ -312,7 +310,7 @@ function create() {
         }
       }
 
-      // update my HUD stats
+      // HUD stats for me
       if (id === socketId) {
         if (serverP.hp !== undefined) localPlayerStats.hp = serverP.hp;
         if (serverP.maxHp !== undefined) localPlayerStats.maxHp = serverP.maxHp;
@@ -325,11 +323,16 @@ function create() {
           xp: localPlayerStats.xp,
           maxXp: localPlayerStats.maxXp
         });
+
+        // quick proof of what server is sending
+        if (!self._lastClassLog || Date.now() - self._lastClassLog > 1500) {
+          console.log('👀 server classKey:', serverP.classKey, '| local chosen:', chosenClassKey);
+          self._lastClassLog = Date.now();
+        }
       }
     });
 
-    // ~~~~ ensure camera follow (timing-safe) ~~~~
-    ensureCameraFollow(self, serverPlayers);
+    ensureCameraFollow(self);
 
     UIHud && UIHud.updateMinimap({
       players: serverPlayers,
@@ -341,18 +344,16 @@ function create() {
 
 // ~~~~ Update ~~~~
 function update() {
-  // ~~~~ freeze movement until class chosen ~~~~
   if (!classChosen) return;
 
-  // SEND INPUT STATE TO SERVER
+  // input -> server
   if (socket && socketId && socket.connected) {
-    const inputPayload = {
+    socket.emit('playerInput', {
       left: !!cursors.left.isDown,
       right: !!cursors.right.isDown,
       up: !!cursors.up.isDown,
       down: !!cursors.down.isDown
-    };
-    socket.emit('playerInput', inputPayload);
+    });
   }
 
   // minimap follow
@@ -368,8 +369,19 @@ function update() {
   });
 }
 
-// ~~~~ camera follow helper ~~~~
-function ensureCameraFollow(scene, playersObj) {
+// ~~~~ Border visuals ~~~~
+function addWorldBorders(scene) {
+  const borderWidth = 30;
+  const borderColor = 0x880000;
+
+  scene.add.rectangle(WORLD_W / 2, borderWidth / 2, WORLD_W, borderWidth, borderColor).setDepth(0);
+  scene.add.rectangle(WORLD_W / 2, WORLD_H - borderWidth / 2, WORLD_W, borderWidth, borderColor).setDepth(0);
+  scene.add.rectangle(borderWidth / 2, WORLD_H / 2, borderWidth, WORLD_H, borderColor).setDepth(0);
+  scene.add.rectangle(WORLD_W - borderWidth / 2, WORLD_H / 2, borderWidth, WORLD_H, borderColor).setDepth(0);
+}
+
+// ~~~~ Camera follow helper ~~~~
+function ensureCameraFollow(scene) {
   if (cameraFollowSet) return;
   if (!scene || !scene.cameras || !scene.cameras.main) return;
   if (!socketId) return;
@@ -379,32 +391,29 @@ function ensureCameraFollow(scene, playersObj) {
     scene.cameras.main.startFollow(mine, true, 0.12, 0.12);
     cameraFollowSet = true;
     console.log('📷 Camera now following my sprite:', socketId);
-    return;
-  }
-
-  // fallback: if server uses different id keys, try to find a player entry matching socketId
-  if (playersObj && playersObj[socketId] && clientPlayers[socketId]) {
-    scene.cameras.main.startFollow(clientPlayers[socketId], true, 0.12, 0.12);
-    cameraFollowSet = true;
-    console.log('📷 Camera following (fallback):', socketId);
-    return;
-  }
-
-  // last-resort fallback: follow first player if ours not created yet
-  const anyId = Object.keys(clientPlayers)[0];
-  if (anyId && clientPlayers[anyId]) {
-    scene.cameras.main.startFollow(clientPlayers[anyId], true, 0.12, 0.12);
-    cameraFollowSet = true;
-    console.warn('📷 Could not find my sprite yet, following first player:', anyId);
   }
 }
 
-// ~~~~ class -> texture helper ~~~~
+// ~~~~ Emit chooseClass (extra-safe payload) ~~~~
+function emitChooseClass(classKey) {
+  const safeKey = SHIP_CLASSES[classKey] ? classKey : DEFAULT_CLASS;
+
+  // send the event your server expects
+  socket.emit('chooseClass', { classKey: safeKey });
+
+  // also send a richer payload (harmless if server ignores)
+  socket.emit('chooseClass', { classKey: safeKey, playerId: socketId, playerName: myId });
+
+  // local apply now (so you SEE it instantly)
+  const mine = clientPlayers[socketId];
+  if (mine) applyClassVisual(mine, safeKey);
+}
+
+// ~~~~ Class -> texture helper ~~~~
 function applyClassVisual(sprite, classKey) {
   const key = SHIP_CLASSES[classKey] ? classKey : DEFAULT_CLASS;
   const cfg = SHIP_CLASSES[key] || SHIP_CLASSES[DEFAULT_CLASS];
 
-  // Only swap if needed
   if (sprite._classKey !== key) {
     sprite.setTexture(cfg.spriteKey);
     sprite.setDisplaySize(53, 40);
@@ -412,24 +421,26 @@ function applyClassVisual(sprite, classKey) {
   }
 }
 
-// ~~~~ sprite helper ~~~~
+// ~~~~ Sprite helper ~~~~
 function addOrUpdatePlayerSprite(scene, playerInfo) {
   const playerId = playerInfo.playerId;
   let sprite = clientPlayers[playerId];
 
-  const classKey = SHIP_CLASSES[playerInfo.classKey] ? playerInfo.classKey : DEFAULT_CLASS;
-  const cfg = SHIP_CLASSES[classKey] || SHIP_CLASSES[DEFAULT_CLASS];
+  const initialClass =
+    (SHIP_CLASSES[playerInfo.classKey] ? playerInfo.classKey : null) ||
+    (playerId === socketId ? chosenClassKey : null) ||
+    DEFAULT_CLASS;
+
+  const cfg = SHIP_CLASSES[initialClass] || SHIP_CLASSES[DEFAULT_CLASS];
 
   if (!sprite) {
-    console.log('Creating sprite for:', playerInfo.playerName || playerId, 'class:', classKey);
+    console.log('Creating sprite for:', playerInfo.playerName || playerId, 'class:', initialClass);
 
-    // ship sprite
     sprite = scene.add.sprite(playerInfo.x, playerInfo.y, cfg.spriteKey);
-    sprite._classKey = classKey;
+    sprite._classKey = initialClass;
     sprite.setOrigin(0.5, 0.5);
     sprite.setDisplaySize(53, 40);
 
-    // tint by team
     if (playerInfo.team === 'red') sprite.setTint(0xff4444);
     else if (playerInfo.team === 'blue') sprite.setTint(0x4444ff);
 
@@ -439,7 +450,6 @@ function addOrUpdatePlayerSprite(scene, playerInfo) {
 
     clientPlayers[playerId] = sprite;
 
-    // name label
     if (playerInfo.playerName) playerNames[playerId] = playerInfo.playerName;
 
     const nameText = scene.add.text(playerInfo.x, playerInfo.y - 70, playerInfo.playerName || playerId, {
@@ -457,11 +467,10 @@ function addOrUpdatePlayerSprite(scene, playerInfo) {
   return sprite;
 }
 
-// ~~~~ class picker (keyboard only) ~~~~
+// ~~~~ Class picker (keyboard only) ~~~~
 function openClassPickerKeyboard(scene, onPick) {
   console.log('~~~ openClassPickerKeyboard called ~~~');
 
-  // stop login input eating keys
   try {
     if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
     window.focus && window.focus();
@@ -470,8 +479,7 @@ function openClassPickerKeyboard(scene, onPick) {
   const cam = scene.cameras.main;
   const overlay = scene.add.container(0, 0).setScrollFactor(0).setDepth(999999);
 
-  const dim = scene.add.rectangle(0, 0, cam.width, cam.height, 0x000000, 0.80)
-    .setOrigin(0, 0);
+  const dim = scene.add.rectangle(0, 0, cam.width, cam.height, 0x000000, 0.80).setOrigin(0, 0);
   overlay.add(dim);
 
   const title = scene.add.text(cam.width / 2, 80, 'Choose Your Ship', {
@@ -507,8 +515,7 @@ function openClassPickerKeyboard(scene, onPick) {
     const row = scene.add.container(cam.width / 2, y);
     overlay.add(row);
 
-    const box = scene.add.rectangle(0, 0, 520, 120, 0x111111, 0.95)
-      .setStrokeStyle(2, 0xffffff, 0.35);
+    const box = scene.add.rectangle(0, 0, 520, 120, 0x111111, 0.95).setStrokeStyle(2, 0xffffff, 0.35);
     row.add(box);
 
     row.add(scene.add.image(-200, 0, cfg.spriteKey).setScale(1.0));
@@ -545,7 +552,6 @@ function openClassPickerKeyboard(scene, onPick) {
   }
   refresh();
 
-  // one reliable keydown handler
   const kb = scene.input.keyboard;
   const handler = (ev) => {
     const code = ev.code;
