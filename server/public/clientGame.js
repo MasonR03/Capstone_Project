@@ -166,6 +166,11 @@ function preload() {
 
   this.load.on('complete', () => console.log('Assets loaded successfully'));
   this.load.on('loaderror', (file) => console.error('Error loading asset:', file.key, file.url));
+
+  //level menu tbd
+  this.load.image('menuIn',  'assets/MenuSliderIn.png');
+  this.load.image('menuOut', 'assets/MenuSliderOut.png');
+
 }
 
 // ~~~~ Create ~~~~

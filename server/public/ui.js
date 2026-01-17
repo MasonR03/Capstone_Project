@@ -1,144 +1,257 @@
-// public/ui/ui.js
-// Simple HUD (no minimap)
+// Simple HUD + slide panel
 // Exposes:
 // - UI.init(scene)
 // - UI.updateScores(scores)
 // - UI.updateHpXp({ hp, maxHp, xp, maxXp })
 // - UI.tick(camera)
+// - UI.updateMinimap(data)
 
 (function () {
-  console.log('LOADED UI.JS (public/ui/ui.js) v205');
-
   let scene;
 
-  // HUD pieces
+  // HUD
   let hud;
   let frameImg;
   let hpFill, xpFill;
-
-  // Text
-  let hpLabel, xpLabel;   // "HP" / "XP" in the gap
-  let hpText, xpText;     // "100/100" centered on bar
+  let hpText, xpText;
   let scoreText;
+
+  // Slide panel
+  let panel;
+  let panelBg;
+  let panelTween = null;
+  let panelOpen = false;
+  let panelAnimating = false;
+
+  // Toggle tab (outside panel)
+  let tabBtn;
+  let tabTween = null;
 
   // ~~~~ layout tuning ~~~~
   const HUD_X = 16;
   const HUD_Y = 16;
-  const HUD_SCALE = 1;
 
-  // ~~~~ bar coords (HUD local px) ~~~~
-  const HP_START_X = 45;
+  // Your coords (HUD local px)
+  const HP_START_X = 50;
   const HP_CENTER_Y = 14;
   const HP_END_X = 128;
 
-  const XP_START_X = 45;
+  const XP_START_X = 50;
   const XP_CENTER_Y = 48;
   const XP_END_X = 128;
 
-  // ~~~~ padding inside the bar window ~~~~
-  const FILL_PAD_L = 2;
-  const FILL_PAD_R = 2;
+  // Labels (gap area)
+  const HP_TEXT_X = 44;
+  const HP_TEXT_Y = 24;
+  const XP_TEXT_X = 45;
+  const XP_TEXT_Y = 56;
 
-  // Fill sizes (computed)
-  const HP_FILL_X = HP_START_X + FILL_PAD_L;
-  const HP_FILL_Y = HP_CENTER_Y;
-  const HP_FILL_W = (HP_END_X - HP_START_X) - (FILL_PAD_L + FILL_PAD_R);
-  const HP_FILL_H = 5;
+  // Fill padding (inside frame)
+  const FILL_PAD_X = 2;
 
-  const XP_FILL_X = XP_START_X + FILL_PAD_L;
-  const XP_FILL_Y = XP_CENTER_Y;
-  const XP_FILL_W = (XP_END_X - XP_START_X) - (FILL_PAD_L + FILL_PAD_R);
-  const XP_FILL_H = 5;
+  // ~~~~ panel tuning ~~~~
+  const PANEL_W = 260;
+  const PANEL_H = 220;
+  const PANEL_MARGIN = 16;
+  const PANEL_Z = 999;
 
-  // Centers for number text
-  const HP_BAR_CX = (HP_START_X + HP_END_X) / 2;
-  const XP_BAR_CX = (XP_START_X + XP_END_X) / 2;
+  // tab tuning
+  const TAB_Z = 1000;
+  const TAB_OFFSET_Y = 18; // from panel top
+  const TAB_OUTSIDE_PAD = 6; // gap between panel edge and tab
 
-  // Gap label positions (from your clicks)
-  const HP_LABEL_X = 44;
-  const HP_LABEL_Y = 24;
-
-  const XP_LABEL_X = 44;
-  const XP_LABEL_Y = 58;
-
-  // Score position (screen px)
-  const SCORE_X = 16;
-  const SCORE_Y = 92;
+  function safeAdd(container, obj) {
+    if (container && obj && obj.scene) container.add(obj);
+  }
 
   function init(phaserScene) {
     scene = phaserScene;
 
     // HUD container (screen-space)
-    hud = scene.add.container(HUD_X, HUD_Y);
-    hud.setScrollFactor(0);
-    hud.setDepth(200);
-    hud.setScale(HUD_SCALE);
+    hud = scene.add.container(HUD_X, HUD_Y).setScrollFactor(0).setDepth(200);
 
-    // HP fill (behind PNG)
-    hpFill = scene.add.rectangle(HP_FILL_X, HP_FILL_Y, HP_FILL_W, HP_FILL_H, 0xff3333);
-    hpFill.setOrigin(0, 0.5);
+    // Fills
+    const hpFullW = Math.max(0, (HP_END_X - HP_START_X) - (FILL_PAD_X * 2));
+    const xpFullW = Math.max(0, (XP_END_X - XP_START_X) - (FILL_PAD_X * 2));
+    const hpH = 8;
+    const xpH = 8;
 
-    // XP fill (behind PNG)
-    xpFill = scene.add.rectangle(XP_FILL_X, XP_FILL_Y, XP_FILL_W, XP_FILL_H, 0x00ccff);
-    xpFill.setOrigin(0, 0.5);
+    hpFill = scene.add.rectangle(
+      HP_START_X + FILL_PAD_X,
+      HP_CENTER_Y,
+      hpFullW,
+      hpH,
+      0xff3333
+    ).setOrigin(0, 0.5);
+
+    xpFill = scene.add.rectangle(
+      XP_START_X + FILL_PAD_X,
+      XP_CENTER_Y,
+      xpFullW,
+      xpH,
+      0x00ccff
+    ).setOrigin(0, 0.5);
 
     // Frame PNG (on top)
-    frameImg = scene.add.image(0, 0, 'hudBars').setOrigin(0, 0);
+    if (scene.textures.exists('hudBars')) {
+      frameImg = scene.add.image(0, 0, 'hudBars').setOrigin(0, 0);
+      console.log('HUD frame size:', frameImg.width, frameImg.height);
+    } else {
+      console.warn('UI: Missing texture key "hudBars"');
+      frameImg = scene.add.rectangle(0, 0, 140, 64, 0x222222, 0.5).setOrigin(0, 0);
+    }
 
-    // // HP label in gap
-    // hpLabel = scene.add.text(HP_LABEL_X, HP_LABEL_Y, 'HP', {
-    //   fontSize: '7px',
+    // // Labels
+    // hpText = scene.add.text(HP_TEXT_X, HP_TEXT_Y, 'HP 0/0', {
+    //   fontSize: '12px',
     //   color: '#ffffff',
     //   fontFamily: 'monospace'
     // }).setOrigin(0, 0.5);
 
-    // // XP label in gap
-    // xpLabel = scene.add.text(XP_LABEL_X, XP_LABEL_Y, 'XP', {
-    //   fontSize: '7px',
+    // xpText = scene.add.text(XP_TEXT_X, XP_TEXT_Y, 'XP 0/0', {
+    //   fontSize: '12px',
     //   color: '#ffffff',
-    //   ffontFamily: 'monospace'
+    //   fontFamily: 'monospace'
     // }).setOrigin(0, 0.5);
 
-    // HP numbers centered on bar
-    hpText = scene.add.text(HP_BAR_CX, HP_CENTER_Y, '0/0', {
-      fontSize: '10px',
-      color: '#ffffff',
-      font: 'Orbitron, sans-serif'
-    }).setOrigin(0.5, 0.5);
+    // Add back-to-front (no arrays)
+    safeAdd(hud, hpFill);
+    safeAdd(hud, xpFill);
+    safeAdd(hud, frameImg);
+    safeAdd(hud, hpText);
+    safeAdd(hud, xpText);
 
-    // XP numbers centered on bar
-    xpText = scene.add.text(XP_BAR_CX, XP_CENTER_Y, '0/0', {
-      fontSize: '10px',
-      color: '#ffffff',
-      font: 'Orbitron, sans-serif'
-    }).setOrigin(0.5, 0.5);
-
-    // Add in back-to-front order
-     //hpLabel, //xpLabel,
-    hud.add([hpFill, xpFill, frameImg, hpText, xpText]);
-
-    // Score (separate)
-    scoreText = scene.add.text(SCORE_X, SCORE_Y, 'Score: R 0 | B 0', {
+    // Score text
+    scoreText = scene.add.text(20, 80, 'Score: R 0 | B 0', {
       fontSize: '18px',
       fill: '#ffffff',
-      font: 'Orbitron, sans-serif'
-    });
-    scoreText.setScrollFactor(0);
-    scoreText.setDepth(210);
+      fontFamily: 'monospace'
+    }).setScrollFactor(0).setDepth(210);
 
-    // ~~~~ click helper ~~~~
-    scene.input.on('pointerdown', (p) => {
-      if (!hud) return;
-      const lx = (p.x - hud.x) / hud.scaleX;
-      const ly = (p.y - hud.y) / hud.scaleY;
-      console.log('HUD local px:', Math.round(lx), Math.round(ly));
-    });
-
-    // Start full bars (so you can see it immediately)
-    setBarWidth(hpFill, HP_FILL_W, HP_FILL_H);
-    setBarWidth(xpFill, XP_FILL_W, XP_FILL_H);
+    // Panel + tab
+    buildPanel();
 
     return window.UI;
+  }
+
+  function buildPanel() {
+    const cam = scene.cameras.main;
+
+    // anchored bottom-left
+    const openY = cam.height - PANEL_MARGIN - PANEL_H;
+
+    // closed: slide mostly off-screen to the left
+    const closedX = -PANEL_W + 24;
+
+    panel = scene.add.container(closedX, openY)
+      .setScrollFactor(0)
+      .setDepth(PANEL_Z);
+
+    panelBg = scene.add.rectangle(0, 0, PANEL_W, PANEL_H, 0x0b0b0b, 0.92)
+      .setOrigin(0, 0)
+      .setStrokeStyle(2, 0xffffff, 0.18);
+    safeAdd(panel, panelBg);
+
+    const title = scene.add.text(14, 12, 'LEVEL UP', {
+      fontSize: '16px',
+      fill: '#ffffff',
+      fontFamily: 'monospace'
+    }).setOrigin(0, 0);
+    safeAdd(panel, title);
+
+    const hint = scene.add.text(14, 44, 'Coming soon:\n- Spend points\n- Upgrades\n- Perks', {
+      fontSize: '12px',
+      fill: '#cccccc',
+      fontFamily: 'monospace'
+    }).setOrigin(0, 0);
+    safeAdd(panel, hint);
+
+    // Tab button is NOT inside the panel (so it can sit outside)
+    const tabX = 0; // set in tick()
+    const tabY = 0;
+
+    const hasIn  = scene.textures.exists('menuIn');
+    const hasOut = scene.textures.exists('menuOut');
+
+    if (!hasIn)  console.warn('UI: Missing texture key "menuIn"');
+    if (!hasOut) console.warn('UI: Missing texture key "menuOut"');
+
+    tabBtn = hasIn
+      ? scene.add.image(tabX, tabY, 'menuOut').setOrigin(0.5, 0.5)
+      : scene.add.rectangle(tabX, tabY, 22, 22, 0x00ffcc, 0.85).setOrigin(0.5, 0.5);
+
+    tabBtn.setScrollFactor(0).setDepth(TAB_Z);
+
+    // Clickable
+    tabBtn.setInteractive({ useHandCursor: true });
+    tabBtn.on('pointerdown', () => togglePanel());
+
+    // Keyboard
+    scene.input.keyboard.on('keydown-P', () => openPanel());
+    scene.input.keyboard.on('keydown-L', () => closePanel());
+
+    // initial layout
+    tick(cam);
+  }
+
+  function togglePanel() {
+    if (panelAnimating) return;
+    if (panelOpen) closePanel();
+    else openPanel();
+  }
+
+  function openPanel() {
+    if (!panel || panelAnimating || panelOpen) return;
+    panelAnimating = true;
+
+    if (panelTween) panelTween.stop();
+    if (tabTween) tabTween.stop();
+
+    const cam = scene.cameras.main;
+    const openX = PANEL_MARGIN;
+    const openY = cam.height - PANEL_MARGIN - PANEL_H;
+
+    panelTween = scene.tweens.add({
+      targets: panel,
+      x: openX,
+      y: openY,
+      duration: 240,
+      ease: 'Sine.easeOut',
+      onComplete: () => {
+        panelAnimating = false;
+        panelOpen = true;
+      }
+    });
+
+    // switch tab art to "in" if available
+    if (tabBtn && scene.textures.exists('menuIn')) tabBtn.setTexture('menuIn');
+  }
+
+  function closePanel() {
+    if (!panel || panelAnimating || !panelOpen) return;
+    panelAnimating = true;
+
+    if (panelTween) panelTween.stop();
+    if (tabTween) tabTween.stop();
+
+    const cam = scene.cameras.main;
+    const closedX = -PANEL_W + 24;
+    const openY = cam.height - PANEL_MARGIN - PANEL_H;
+
+    panelTween = scene.tweens.add({
+      targets: panel,
+      x: closedX,
+      y: openY,
+      duration: 240,
+      ease: 'Sine.easeIn',
+      onComplete: () => {
+        panelAnimating = false;
+        panelOpen = false;
+      }
+    });
+
+    // switch tab art to "out" if available
+    if (tabBtn && scene.textures.exists('menuOut')) tabBtn.setTexture('menuOut');
   }
 
   function updateScores(scores) {
@@ -148,42 +261,48 @@
 
   function updateHpXp({ hp = 0, maxHp = 0, xp = 0, maxXp = 0 } = {}) {
     // HP
-    if (hpFill) {
-      const p = (maxHp > 0) ? clamp01(hp / maxHp) : 0;
-      const w = Math.floor(HP_FILL_W * p);
-      setBarWidth(hpFill, w, HP_FILL_H);
-      if (hpText) hpText.setText(`${Math.max(0, Math.floor(hp))}/${maxHp || 0}`);
+    if (hpFill && maxHp > 0) {
+      const p = Math.max(0, Math.min(1, hp / maxHp));
+      const full = (HP_END_X - HP_START_X) - (FILL_PAD_X * 2);
+      hpFill.width = Math.max(0, full * p);
+      if (hpText) hpText.setText(`HP ${Math.max(0, Math.floor(hp))}/${maxHp}`);
     }
 
     // XP
-    if (xpFill) {
-      const p = (maxXp > 0) ? clamp01(xp / maxXp) : 0;
-      const w = Math.floor(XP_FILL_W * p);
-      setBarWidth(xpFill, w, XP_FILL_H);
-      if (xpText) xpText.setText(`${Math.max(0, Math.floor(xp))}/${maxXp || 0}`);
+    if (xpFill && maxXp > 0) {
+      const p = Math.max(0, Math.min(1, xp / maxXp));
+      const full = (XP_END_X - XP_START_X) - (FILL_PAD_X * 2);
+      xpFill.width = Math.max(0, full * p);
+      if (xpText) xpText.setText(`XP ${Math.max(0, Math.floor(xp))}/${maxXp}`);
     }
   }
 
-  // Keep HUD pinned
+  // keep UI pinned on resize
   function tick(camera) {
     if (!camera) return;
-    if (hud) hud.setPosition(HUD_X, HUD_Y);
-    if (scoreText) scoreText.setPosition(SCORE_X, SCORE_Y);
+
+    // HUD
+    hud && hud.setPosition(HUD_X, HUD_Y);
+    scoreText && scoreText.setPosition(20, 80);
+
+    // Panel anchor bottom-left
+    if (panel) {
+      const baseY = camera.height - PANEL_MARGIN - PANEL_H;
+      panel.y = baseY;
+
+      // keep it snapped only when not animating
+      if (panelOpen && !panelAnimating) panel.x = PANEL_MARGIN;
+    }
+
+    // Tab stays outside panel edge
+    if (tabBtn && panel) {
+      const tabX = panel.x + PANEL_W + TAB_OUTSIDE_PAD;
+      const tabY = panel.y + TAB_OFFSET_Y;
+      tabBtn.setPosition(tabX, tabY);
+    }
   }
 
   function updateMinimap() {}
-
-  // ~~~~ helpers ~~~~
-  function clamp01(v) {
-    return Math.max(0, Math.min(1, v));
-  }
-
-  function setBarWidth(rect, w, h) {
-    // Keep origin-left scaling clean
-    const ww = Math.max(0, w);
-    rect.setSize(ww, h);
-    rect.setDisplaySize(ww, h);
-  }
 
   window.UI = { init, updateScores, updateHpXp, tick, updateMinimap };
 })();
