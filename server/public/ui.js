@@ -13,7 +13,7 @@
   let hud;
   let frameImg;
   let hpFill, xpFill;
-  let hpText, xpText;
+  let hpNumText, xpNumText; // centered numbers
   let scoreText;
 
   // Slide panel
@@ -48,6 +48,12 @@
 
   // Fill padding (inside frame)
   const FILL_PAD_X = 2;
+
+  // Center numbers inside bars (tweak if needed)
+  const HP_NUM_X = Math.floor((HP_START_X + HP_END_X) / 2);
+  const HP_NUM_Y = HP_CENTER_Y;
+  const XP_NUM_X = Math.floor((XP_START_X + XP_END_X) / 2);
+  const XP_NUM_Y = XP_CENTER_Y;
 
   // ~~~~ panel tuning ~~~~
   const PANEL_W = 260;
@@ -101,7 +107,7 @@
       frameImg = scene.add.rectangle(0, 0, 140, 64, 0x222222, 0.5).setOrigin(0, 0);
     }
 
-    // // Labels
+    // Labels
     // hpText = scene.add.text(HP_TEXT_X, HP_TEXT_Y, 'HP 0/0', {
     //   fontSize: '12px',
     //   color: '#ffffff',
@@ -114,12 +120,31 @@
     //   fontFamily: 'monospace'
     // }).setOrigin(0, 0.5);
 
+    // Center numbers (inside bars)
+    hpNumText = scene.add.text(HP_NUM_X, HP_NUM_Y, '0/0', {
+      fontSize: '12px',
+      color: '#ffffff',
+      fontFamily: 'monospace',
+      stroke: '#000000',
+      strokeThickness: 2
+    }).setOrigin(0.5, 0.5);
+
+    xpNumText = scene.add.text(XP_NUM_X, XP_NUM_Y, '0/0', {
+      fontSize: '12px',
+      color: '#ffffff',
+      fontFamily: 'monospace',
+      stroke: '#000000',
+      strokeThickness: 2
+    }).setOrigin(0.5, 0.5);
+
     // Add back-to-front (no arrays)
     safeAdd(hud, hpFill);
     safeAdd(hud, xpFill);
     safeAdd(hud, frameImg);
-    safeAdd(hud, hpText);
-    safeAdd(hud, xpText);
+    safeAdd(hud, hpNumText);
+    safeAdd(hud, xpNumText);
+    // safeAdd(hud, hpText);
+    // safeAdd(hud, xpText);
 
     // Score text
     scoreText = scene.add.text(20, 80, 'Score: R 0 | B 0', {
@@ -265,7 +290,9 @@
       const p = Math.max(0, Math.min(1, hp / maxHp));
       const full = (HP_END_X - HP_START_X) - (FILL_PAD_X * 2);
       hpFill.width = Math.max(0, full * p);
-      if (hpText) hpText.setText(`HP ${Math.max(0, Math.floor(hp))}/${maxHp}`);
+      if (hpNumText) hpNumText.setText(`${Math.max(0, Math.floor(hp))}/${maxHp}`);
+    } else {
+      if (hpNumText) hpNumText.setText('0/0');
     }
 
     // XP
@@ -273,7 +300,9 @@
       const p = Math.max(0, Math.min(1, xp / maxXp));
       const full = (XP_END_X - XP_START_X) - (FILL_PAD_X * 2);
       xpFill.width = Math.max(0, full * p);
-      if (xpText) xpText.setText(`XP ${Math.max(0, Math.floor(xp))}/${maxXp}`);
+      if (xpNumText) xpNumText.setText(`${Math.max(0, Math.floor(xp))}/${maxXp}`);
+    } else {
+      if (xpNumText) xpNumText.setText('0/0');
     }
   }
 
