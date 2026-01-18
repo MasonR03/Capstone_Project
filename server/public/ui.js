@@ -31,9 +31,8 @@
 
     hpText = scene.add
       .text(cx, cam.height - 80, 'HP 0/0', {
-        fontSize: '12px',
-        color: '#ffffff',
-        fontFamily: 'monospace'
+        font: '12px Orbitron, sans-serif',
+        color: '#ffffff'
       })
       .setOrigin(0.5, 0.5)
       .setScrollFactor(0)
@@ -52,9 +51,8 @@
 
     xpText = scene.add
       .text(cx, cam.height - 50, 'XP 0/0', {
-        fontSize: '12px',
-        color: '#ffffff',
-        fontFamily: 'monospace'
+        font: '12px Orbitron, sans-serif',
+        color: '#ffffff'
       })
       .setOrigin(0.5, 1.6)
       .setScrollFactor(0)
@@ -63,9 +61,8 @@
     // Score (top-left)
     scoreText = scene.add
       .text(20, 20, 'Score: R 0 | B 0', {
-        fontSize: '18px',
-        fill: '#ffffff',
-        fontFamily: 'monospace'
+        font: '18px Orbitron, sans-serif',
+        fill: '#ffffff'
       })
       .setScrollFactor(0)
       .setDepth(100);
