@@ -162,8 +162,15 @@ const DebugTools = (() => {
       posXElement.textContent = Math.round(player.x);
       posYElement.textContent = Math.round(player.y);
 
-      // Calculate velocity if player has body
-      if (player.body) {
+
+      // Calculate velocity from predicted state (for ClientShip)
+      if (player.predicted) {
+        const velX = player.predicted.vx || 0;
+        const velY = player.predicted.vy || 0;
+        const speed = Math.round(Math.sqrt(velX * velX + velY * velY));
+        velocityElement.textContent = speed;
+      } else if (player.body) {
+        // Fallback for Phaser physics body
         const velX = player.body.velocity.x;
         const velY = player.body.velocity.y;
         const speed = Math.round(Math.sqrt(velX * velX + velY * velY));

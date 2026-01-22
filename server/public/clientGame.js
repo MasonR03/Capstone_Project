@@ -188,7 +188,7 @@ function create() {
     }
     if (localShip) {
       return {
-        player: localShip.sprite,
+        player: localShip,
         allPlayers: allSprites,
         playerNames: names
       };
