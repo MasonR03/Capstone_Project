@@ -110,6 +110,7 @@ const DebugTools = (() => {
     const camXElement = document.getElementById('cam-x');
     const camYElement = document.getElementById('cam-y');
     const velocityElement = document.getElementById('velocity');
+    const pingElement = document.getElementById('ping');
     const playerCountElement = document.getElementById('player-count');
     const playerNamesSection = document.getElementById('player-names-section');
     const playerNamesList = document.getElementById('player-names-list');
@@ -159,29 +160,39 @@ const DebugTools = (() => {
 
     if (playerInfo && playerInfo.player) {
       const player = playerInfo.player;
-      posXElement.textContent = Math.round(player.x);
-      posYElement.textContent = Math.round(player.y);
 
-
-      // Calculate velocity from predicted state (for ClientShip)
+      // Use predicted position/velocity for ClientShip (local player)
       if (player.predicted) {
+        posXElement.textContent = Math.round(player.predicted.x);
+        posYElement.textContent = Math.round(player.predicted.y);
         const velX = player.predicted.vx || 0;
         const velY = player.predicted.vy || 0;
         const speed = Math.round(Math.sqrt(velX * velX + velY * velY));
         velocityElement.textContent = speed;
       } else if (player.body) {
         // Fallback for Phaser physics body
+        posXElement.textContent = Math.round(player.x);
+        posYElement.textContent = Math.round(player.y);
         const velX = player.body.velocity.x;
         const velY = player.body.velocity.y;
         const speed = Math.round(Math.sqrt(velX * velX + velY * velY));
         velocityElement.textContent = speed;
       } else {
+        posXElement.textContent = Math.round(player.x);
+        posYElement.textContent = Math.round(player.y);
         velocityElement.textContent = '0';
       }
     } else {
       posXElement.textContent = '-';
       posYElement.textContent = '-';
       velocityElement.textContent = '-';
+    }
+
+    // Update ping display
+    if (window.getCurrentPing) {
+      pingElement.textContent = window.getCurrentPing();
+    } else {
+      pingElement.textContent = '-';
     }
   }
 

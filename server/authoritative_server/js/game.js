@@ -121,6 +121,13 @@ function initializeServer(io) {
     // Notify others
     socket.broadcast.emit('newPlayer', ship.serialize());
 
+    // Handle ping for latency measurement
+    socket.on('ping', (callback) => {
+      if (typeof callback === 'function') {
+        callback();
+      }
+    });
+
     // Handle player name from client
     socket.on('setPlayerName', (playerName) => {
       const ship = entityManager.getShip(socket.id);

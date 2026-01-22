@@ -1,6 +1,10 @@
 // ~~~ Socket connection (delayed until login) ~~~
 let socket = null;
 
+// ~~~ Ping tracking ~~~
+let currentPing = 0;
+let pingInterval = null;
+
 // ~~~ Global client state ~~~
 let entityManager = null;   // ClientEntityManager instance
 let myId = null;            // Player name (set from login)
@@ -35,11 +39,38 @@ function initializeSocket() {
     
     // Send player name to server for identification
     socket.emit('setPlayerName', myId);
+
+    // Start ping measurement
+    startPingMeasurement();
   });
-  
+
   // Set up other socket listeners
   setupSocketListeners();
 }
+
+// Ping measurement using socket.io's built-in ping
+function startPingMeasurement() {
+  // Clear any existing interval
+  if (pingInterval) clearInterval(pingInterval);
+
+  // Measure ping every second
+  pingInterval = setInterval(() => {
+    if (socket && socket.connected) {
+      const start = Date.now();
+      socket.emit('ping', () => {
+        currentPing = Date.now() - start;
+      });
+    }
+  }, 1000);
+}
+
+// Expose ping for debug tools
+function getCurrentPing() {
+  return currentPing;
+}
+
+// Make it globally accessible
+window.getCurrentPing = getCurrentPing;
 
 // Set up global handler for stars that works before Phaser scene is created
 function setupSocketListeners() {
