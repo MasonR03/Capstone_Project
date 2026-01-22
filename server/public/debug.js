@@ -177,6 +177,14 @@ const DebugTools = (() => {
         const velY = player.body.velocity.y;
         const speed = Math.round(Math.sqrt(velX * velX + velY * velY));
         velocityElement.textContent = speed;
+      } else if (player.velocityX !== undefined || player.velocityY !== undefined) {
+        // Use server-provided velocity stored on sprite
+        posXElement.textContent = Math.round(player.x);
+        posYElement.textContent = Math.round(player.y);
+        const velX = player.velocityX || 0;
+        const velY = player.velocityY || 0;
+        const speed = Math.round(Math.sqrt(velX * velX + velY * velY));
+        velocityElement.textContent = speed;
       } else {
         posXElement.textContent = Math.round(player.x);
         posYElement.textContent = Math.round(player.y);

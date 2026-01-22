@@ -235,6 +235,16 @@ function create() {
     UIHud.updateScores(serverScores);
   }
 
+  // Initialize debug tools
+  DebugTools.init(game, () => {
+    const mySprite = clientPlayers[socketId];
+    return {
+      player: mySprite,
+      allPlayers: clientPlayers,
+      playerNames: playerNames
+    };
+  });
+
   // movement keys
   cursors = this.input.keyboard.addKeys({
     left: Phaser.Input.Keyboard.KeyCodes.LEFT,
@@ -339,6 +349,10 @@ function create() {
         sprite.x = serverP.x;
         sprite.y = serverP.y;
         sprite.rotation = serverP.rotation;
+
+        // Store velocity for debug display
+        sprite.velocityX = serverP.velocityX || 0;
+        sprite.velocityY = serverP.velocityY || 0;
 
         const nt = playerNameTexts[id];
         if (nt) {
