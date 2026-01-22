@@ -108,6 +108,7 @@ function initializeServer(io) {
       angularVelocity: 0,
       team: Math.random() < 0.5 ? 'red' : 'blue',
       input: { left: false, right: false, up: false, down: false },
+      lastInputSeq: 0,   // Track last processed input sequence for reconciliation
       hp: 100,
       maxHp: 100,
       xp: 0,
@@ -154,6 +155,11 @@ function initializeServer(io) {
     socket.on('playerInput', (input) => {
       if (players[socket.id]) {
         players[socket.id].input = input;
+
+        // Track input sequence for client-side prediction reconciliation
+        if (input.seq !== undefined) {
+          players[socket.id].lastInputSeq = input.seq;
+        }
 
         // Debug log when input is received
         if (!socket.lastInputLog || Date.now() - socket.lastInputLog > 1000) {
@@ -372,8 +378,8 @@ function updateGame(io, frameCount, delta) {
   // Physics world handles collision detection automatically via overlap colliders
   physics.world.postUpdate(Date.now(), delta);
 
-  // Broadcast player updates
-  io.emit('playerUpdates', players);
+  // Broadcast player updates with timestamp for client interpolation
+  io.emit('playerUpdates', { players: players, timestamp: Date.now() });
 
   // Sends a UI snapshot ~ every 10sec
   if (frameCount % 6 === 0) {
