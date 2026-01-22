@@ -1,59 +1,151 @@
-// ~~~ Socket connection (delayed until login) ~~~
+// Multiplayer client w/ login-gated start + keyboard class picker + HUD + stars + camera follow
+
+// ~~~~ Socket (delayed until login) ~~~~
 let socket = null;
 
-// ~~~ Ping tracking ~~~
+// ~~~~ Ping tracking ~~~~
 let currentPing = 0;
 let pingInterval = null;
 
-// ~~~ Global client state ~~~
+// ~~~~ Global client state ~~~~
 let entityManager = null;   // ClientEntityManager instance
-let myId = null;            // Player name (set from login)
-let socketId = null;        // socket.id from server
-let pendingStarPositions = null; // Store star positions received before scene creation
-let UIHud = null; // controller from UI.init
+const clientPlayers = {};   // playerId -> Phaser sprite (backward compat)
+const playerNames = {};     // playerId -> player name
+const playerNameTexts = {}; // playerId -> Phaser text object
 
-// ~~~ Movement sync state ~~~
+let myId = null;            // display id (player name)
+let socketId = null;        // socket.id from server
+
+let pendingStarPositions = null; // stars before scene exists
+let UIHud = null;                // controller from UI.init
+
+// ~~~~ Movement sync state ~~~~
 const SNAP_THRESHOLD = 10000;     // squared distance; snap if error > 100 units
 
-// Initialize socket connection after login
-function initializeSocket() {
-  if (socket) return; // Already initialized
-  
-  socket = io({
-    transports: ['websocket']
-  });
+// ~~~~ Class gate ~~~~
+let classChosen = false;
+let chosenClassKey = null;
 
-  // Set myId from playerName (from login.js)
-  socket.on('connect', function() {
-    socketId = socket.id;
-    // Use the player name from login as the myId for display purposes
-    // Note: window.playerName is set by login.js before this script runs
-    if (!myId && typeof window.playerName !== 'undefined' && window.playerName) {
-      myId = window.playerName;
-    } else if (!myId) {
-      myId = socket.id;
+// ~~~~ Ship classes ~~~~
+const SHIP_CLASSES = {
+  hunter: {
+    name: 'Hunter',
+    spriteKey: 'ship_hunter',
+    stats: { maxHp: 90, speed: 260, accel: 220 }
+  },
+  tanker: {
+    name: 'Tanker',
+    spriteKey: 'ship_tanker',
+    stats: { maxHp: 160, speed: 180, accel: 160 }
+  }
+};
+const DEFAULT_CLASS = 'hunter';
+
+// ~~~~ Score + HUD stats ~~~~
+let serverScores = { red: 0, blue: 0 };
+
+let localPlayerStats = {
+  hp: 100,
+  maxHp: 100,
+  xp: 0,
+  maxXp: 100
+};
+
+// ~~~~ Input refs ~~~~
+let cursors;
+
+// ~~~~ Stars ~~~~
+let starSprites = [];
+let latestStars = [];
+
+// ~~~~ World bounds ~~~~
+const WORLD_W = 2000;
+const WORLD_H = 2000;
+
+// ~~~~ Camera follow gate ~~~~
+let cameraFollowSet = false;
+
+// ~~~~ Phaser client config ~~~~
+const clientConfig = {
+  type: Phaser.AUTO,
+  parent: 'game-container',
+  width: 800,
+  height: 600,
+  backgroundColor: '#000000',
+  physics: {
+    default: 'arcade',
+    arcade: { debug: false, gravity: { y: 0 } }
+  },
+  scene: {
+    preload: preload,
+    create: create,
+    update: update
+  }
+};
+
+let game = null;
+
+// ~~~~ Start after login ~~~~
+document.addEventListener('DOMContentLoaded', function () {
+  const loginCheckInterval = setInterval(function () {
+    if (
+      typeof window.loginComplete !== 'undefined' &&
+      window.loginComplete === true &&
+      typeof playerName !== 'undefined' &&
+      playerName
+    ) {
+      clearInterval(loginCheckInterval);
+      console.log('🎮 Login complete. Initializing socket + game...');
+
+      initializeSocket();
+      game = new Phaser.Game(clientConfig);
     }
+  }, 100);
+
+  setTimeout(function () {
+    if (!game) {
+      console.warn('⚠️ Login timeout - starting game anyway');
+      if (!socket) initializeSocket();
+      game = new Phaser.Game(clientConfig);
+      clearInterval(loginCheckInterval);
+    }
+  }, 30000);
+});
+
+// ~~~~ Socket init ~~~~
+function initializeSocket() {
+  if (socket) return;
+
+  socket = io({ transports: ['websocket'] });
+
+  socket.on('connect', function () {
+    socketId = socket.id;
+
+    if (!myId && typeof playerName !== 'undefined' && playerName) myId = playerName;
+    else if (!myId) myId = socket.id;
+
     console.log('✅ Connected to server');
-    console.log('🆔 My player ID (name):', myId);
+    console.log('🆔 My player name:', myId);
     console.log('🔌 Socket ID:', socketId);
-    
-    // Send player name to server for identification
+
     socket.emit('setPlayerName', myId);
 
     // Start ping measurement
     startPingMeasurement();
+
+    // send class (if already chosen)
+    if (classChosen && chosenClassKey) {
+      emitChooseClass(chosenClassKey);
+    }
   });
 
-  // Set up other socket listeners
   setupSocketListeners();
 }
 
-// Ping measurement using socket.io's built-in ping
+// Ping measurement
 function startPingMeasurement() {
-  // Clear any existing interval
   if (pingInterval) clearInterval(pingInterval);
 
-  // Measure ping every second
   pingInterval = setInterval(() => {
     if (socket && socket.connected) {
       const start = Date.now();
@@ -68,26 +160,19 @@ function startPingMeasurement() {
 function getCurrentPing() {
   return currentPing;
 }
-
-// Make it globally accessible
 window.getCurrentPing = getCurrentPing;
 
-// Set up global handler for stars that works before Phaser scene is created
+// ~~~~ Socket listeners ~~~~
 function setupSocketListeners() {
   socket.on('starsLocation', function (starsInfo) {
-    console.log('📍 Global: Star locations received from server:', starsInfo);
-    latestStars = starsInfo || latestStars; // For the mini-map to pick up on star location
+    console.log('📍 Star locations received:', starsInfo);
+    latestStars = starsInfo || latestStars;
+
     if (starSprites && starSprites.length > 0) {
-      // Stars already created, update them directly
-      starsInfo.forEach((star, index) => {
-        if (starSprites[index]) {
-          starSprites[index].setPosition(star.x, star.y);
-          console.log('⭐ Global: Star', star.id, 'updated to position:', star.x, star.y);
-        }
+      (starsInfo || []).forEach((star, index) => {
+        if (starSprites[index]) starSprites[index].setPosition(star.x, star.y);
       });
     } else {
-      // Stars not created yet, store for later
-      console.log('📌 Global: Storing star positions for when sprites are created');
       pendingStarPositions = starsInfo;
     }
   });
@@ -98,201 +183,59 @@ function setupSocketListeners() {
   });
 }
 
-// Border buffer distance - how far from edge to stop ships
-const BORDER_BUFFER = 20;
-
-// server broadcast scores (we'll also edit this locally for solo mode)
-let serverScores = { red: 0, blue: 0 };
-
-// HUD stats for me
-let localPlayerStats = {
-  hp: 100,
-  maxHp: 100,
-  xp: 0,
-  maxXp: 100
-};
-
-// input refs and HUD refs
-let cursors;
-// (UI is now in public/ui.js)
-let starSprites = [];  // Array to hold multiple star sprites
-
-// local fallback player (DISABLED for multiplayer - causes double ship issue)
-let localPlayerSprite = null;
-
-let latestStars = [];   // <= stars array for minimap
-
-// world bounds we'll reuse
-const WORLD_W = 2000;
-const WORLD_H = 2000;
-
-// ~~~ Phaser client config ~~~
-const clientConfig = {
-  type: Phaser.AUTO,
-  parent: 'game-container',
-  width: 800,
-  height: 600,
-  backgroundColor: '#000000',
-  physics: {
-    default: 'arcade',
-    arcade: {
-      debug: false,
-      gravity: { y: 0 }
-    }
-  },
-  scene: {
-    preload: preload,
-    create: create,
-    update: update
-  }
-};
-
-let game = null;
-
-// Wait for login before starting the game
-document.addEventListener('DOMContentLoaded', function() {
-  // Check if login is complete every 100ms
-  const loginCheckInterval = setInterval(function() {
-    if (typeof window.loginComplete !== 'undefined' && window.loginComplete === true && typeof window.playerName !== 'undefined' && window.playerName) {
-      clearInterval(loginCheckInterval);
-      console.log('🎮 Login complete. Initializing game and socket...');
-      
-      // Now initialize socket with player name
-      initializeSocket();
-      
-      // Start the game
-      game = new Phaser.Game(clientConfig);
-    }
-  }, 100);
-  
-  // Safety timeout after 30 seconds (in case of issues)
-  setTimeout(function() {
-    if (!game) {
-      console.warn('⚠️ Login timeout - starting game anyway');
-      if (!socket) initializeSocket();
-      game = new Phaser.Game(clientConfig);
-      clearInterval(loginCheckInterval);
-    }
-  }, 30000);
-});
-
-// ~~~ Preload ~~~
+// ~~~~ Preload ~~~~
 function preload() {
   console.log('Preloading assets...');
 
-  this.load.image('ship', 'assets/spaceShips_001.png');
-  this.load.image('star', 'assets/star_gold.png');
-  // this.load.image('otherPlayer', 'assets/enemyBlack5.png'); // optional
+  // ships
+  this.load.image('ship_hunter', 'assets/HunterShip.png');
+  this.load.image('ship_tanker', 'assets/TankerShip.png');
 
-  this.load.on('complete', () => {
-    console.log('Assets loaded successfully');
-  });
+  // star + hud
+  this.load.image('star', 'assets/Star.png');
+  this.load.image('hudBars', 'assets/Bar.png');
 
-  this.load.on('loaderror', (file) => {
-    console.error('Error loading asset:', file.key, file.url);
-  });
+  this.load.on('complete', () => console.log('Assets loaded successfully'));
+  this.load.on('loaderror', (file) => console.error('Error loading asset:', file.key, file.url));
+
+  //level menu tbd
+  this.load.image('menuIn',  'assets/MenuSliderIn.png');
+  this.load.image('menuOut', 'assets/MenuSliderOut.png');
+
 }
 
-// ~~~ Create ~~~
+// ~~~~ Create ~~~~
 function create() {
+  console.log('clientGame.js create() is running!');
+
   const self = this;
 
-  // Create graphics object for debug gridlines
-  this.debugGridGraphics = this.add.graphics();
-  this.debugGridGraphics.setDepth(-1); // Behind everything else
-  this.debugGridGraphics.setVisible(false); // Hidden by default
-
-  // Initialize EntityManager
-  entityManager = new ClientEntityManager(this);
-
-  // Initialize debug tools
-  DebugTools.init(game, () => {
-    // Callback to get current player and all players
-    const localShip = entityManager ? entityManager.getLocalShip() : null;
-    const allSprites = {};
-    const names = {};
-    if (entityManager) {
-      entityManager.forEach((ship, id) => {
-        allSprites[id] = ship.sprite;
-        names[id] = ship.playerName;
-      });
-    }
-    if (localShip) {
-      return {
-        player: localShip,
-        allPlayers: allSprites,
-        playerNames: names
-      };
-    }
-    return { allPlayers: allSprites, playerNames: names };
-  }, this.debugGridGraphics);
-
-  // physics world size
+  // world bounds
   this.physics.world.setBounds(0, 0, WORLD_W, WORLD_H);
   this.cameras.main.setBounds(0, 0, WORLD_W, WORLD_H);
 
-  // Draw debug gridlines (100x100 squares)
-  drawDebugGrid(this.debugGridGraphics, WORLD_W, WORLD_H);
+  // red border visuals
+  addWorldBorders(this);
 
-  // Add dark red border visualization
-  const borderWidth = 30;
-  const borderColor = 0x880000;
+  // camera start
+  this.cameras.main.centerOn(WORLD_W / 2, WORLD_H / 2);
+  this.cameras.main.setZoom(1.0);
 
-  // Top border
-  this.add.rectangle(WORLD_W / 2, borderWidth / 2, WORLD_W, borderWidth, borderColor);
-  // Bottom border
-  this.add.rectangle(WORLD_W / 2, WORLD_H - borderWidth / 2, WORLD_W, borderWidth, borderColor);
-  // Left border
-  this.add.rectangle(borderWidth / 2, WORLD_H / 2, borderWidth, WORLD_H, borderColor);
-  // Right border
-  this.add.rectangle(WORLD_W - borderWidth / 2, WORLD_H / 2, borderWidth, WORLD_H, borderColor);
-
-  // group of networked players (from server if/when we get them)
-  this.playersGroup = this.physics.add.group();
-
-  // Sets up the ui
-  // OLD: this.ui = UI.create(...)
+  // minimap
   this.minimap = MiniMap.create(this, WORLD_W, WORLD_H, { size: 160, radius: 70, margin: 20 });
 
-
-  // — UI init —
+  // HUD
   UIHud = window.UI && window.UI.init(this, {
     world: { width: WORLD_W, height: WORLD_H },
-    minimap: { radius: 70 } // you can tweak later
+    minimap: { radius: 70 }
   });
   if (!UIHud) {
-    console.warn('UI module not found. Did you include public/ui.js before clientGame.js?');
+    console.warn('UI module not found. Did you include public/ui/ui.js before clientGame.js?');
   } else {
     UIHud.updateScores(serverScores);
   }
 
-  // create 5 star sprites (visual only, server handles collection)
-  // Initialize at default positions, server will update with actual positions
-  for (let i = 0; i < 5; i++) {
-    const star = this.add.image(
-      WORLD_W / 2 + (i * 100 - 200),  // Spread them out initially
-      WORLD_H / 2,
-      'star'
-    );
-    star.setOrigin(0.5, 0.5);
-    star.setDepth(0); // Behind players
-    starSprites.push(star);
-    console.log('⭐ Initial star', i, 'created at:', star.x, star.y);
-  }
-
-  // If we received star positions before creating sprites (from global handler), apply them now
-  if (pendingStarPositions) {
-    console.log('📍 Applying pending star positions from global handler');
-    pendingStarPositions.forEach((star, index) => {
-      if (starSprites[index]) {
-        starSprites[index].setPosition(star.x, star.y);
-        console.log('⭐ Star', star.id, 'updated to position:', star.x, star.y);
-      }
-    });
-    pendingStarPositions = null;
-  }
-
-  // keyboard controls
+  // movement keys
   cursors = this.input.keyboard.addKeys({
     left: Phaser.Input.Keyboard.KeyCodes.LEFT,
     right: Phaser.Input.Keyboard.KeyCodes.RIGHT,
@@ -300,95 +243,116 @@ function create() {
     down: Phaser.Input.Keyboard.KeyCodes.DOWN
   });
 
-  // fullscreen toggle with F
+  // fullscreen toggle
   this.input.keyboard.on('keydown-F', () => {
-    if (this.scale.isFullscreen) {
-      this.scale.stopFullscreen();
-    } else {
-      this.scale.startFullscreen();
-    }
+    if (this.scale.isFullscreen) this.scale.stopFullscreen();
+    else this.scale.startFullscreen();
   });
 
-  // For multiplayer, camera will follow authoritative sprite when it's created
-  // Set initial camera position to center of world while waiting for player
-  this.cameras.main.centerOn(WORLD_W / 2, WORLD_H / 2);
-  this.cameras.main.setZoom(1.0);
+  // stars
+  for (let i = 0; i < 5; i++) {
+    const star = this.add.image(WORLD_W / 2 + (i * 100 - 200), WORLD_H / 2, 'star');
+    star.setOrigin(0.5, 0.5);
+    star.setDepth(0);
+    star.setScale(1.15);
+    star.setAlpha(1.0);
 
-  // Add a test rectangle to ensure rendering is working
-  const testRect = this.add.rectangle(WORLD_W / 2, WORLD_H / 2, 100, 100, 0x000080);
-  testRect.setStrokeStyle(2, 0xffffff);
-  console.log('Test rectangle added at world center:', testRect.x, testRect.y);
-  // Write word 'center' on rectangle.
-  const centerText = this.add.text(testRect.x, testRect.y, 'CENTER', {
-    font: '16px Orbitron, sans-serif',
-    fill: '#ffffff'
+    this.tweens.add({
+      targets: star,
+      scale: 1.35,
+      alpha: 0.75,
+      duration: 700,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut'
+    });
+
+    starSprites.push(star);
+  }
+
+  // apply pending stars
+  if (pendingStarPositions) {
+    pendingStarPositions.forEach((star, index) => {
+      if (starSprites[index]) starSprites[index].setPosition(star.x, star.y);
+    });
+    pendingStarPositions = null;
+  }
+
+  // class picker (keyboard)
+  openClassPickerKeyboard(this, (pickedKey) => {
+    chosenClassKey = SHIP_CLASSES[pickedKey] ? pickedKey : DEFAULT_CLASS;
+    classChosen = true;
+
+    console.log('Picked class:', chosenClassKey);
+
+    if (socket && socket.connected) emitChooseClass(chosenClassKey);
+    else console.warn('Socket not ready, will send class on connect');
   });
-  centerText.setOrigin(0.5, 0.5);
 
-  // ~~~ SOCKET HANDLERS ~~~
+  // ~~~~ SOCKET HANDLERS ~~~~
   socket.on('currentPlayers', function (players) {
-    // Use socket.id directly if myId isn't set yet
-    if (!myId) {
-      myId = socket.id;
-      console.log('Setting myId from socket.id:', myId);
-    }
+    console.log('currentPlayers:', Object.keys(players).length);
 
-    console.log('Received currentPlayers event with', Object.keys(players).length, 'players');
-    console.log('My socket ID is:', myId, 'Socket.id is:', socket.id);
-    console.log('Player IDs received:', Object.keys(players));
+    Object.keys(players).forEach(function (id) {
+      const p = players[id];
+      addOrUpdatePlayerSprite(self, p);
+    });
 
-    // Use EntityManager to initialize all ships
-    entityManager.initializeFromServer(players, socket.id, self.cameras.main);
-
-    // Double-check we found our player
-    if (!entityManager.getLocalShip()) {
-      console.warn('WARNING: Did not find our player in currentPlayers!');
-      console.warn('Our ID:', myId, 'Socket ID:', socket.id);
-      console.warn('Available IDs:', entityManager.getAllIds());
-
-      // Fallback: follow the first player if we can't find ours
-      const firstId = entityManager.getAllIds()[0];
-      if (firstId) {
-        const firstShip = entityManager.getShip(firstId);
-        if (firstShip) {
-          console.log('Fallback: Following first available player:', firstId);
-          firstShip.setCamera(self.cameras.main);
-        }
-      }
-    }
+    ensureCameraFollow(self);
   });
 
   socket.on('newPlayer', function (playerInfo) {
-    entityManager.addOrUpdateShip(playerInfo);
+    addOrUpdatePlayerSprite(self, playerInfo);
   });
 
   socket.on('playerDisconnected', function (playerId) {
-    entityManager.removeShip(playerId);
-  });
-
-  // Keep backward compatibility for single star updates (if needed)
-  socket.on('starLocation', function (starInfo) {
-    console.log('📍 Single star location received (legacy):', starInfo);
+    if (clientPlayers[playerId]) {
+      clientPlayers[playerId].destroy();
+      delete clientPlayers[playerId];
+    }
+    if (playerNameTexts[playerId]) {
+      playerNameTexts[playerId].destroy();
+      delete playerNameTexts[playerId];
+    }
+    delete playerNames[playerId];
   });
 
   socket.on('playerUpdates', function (data) {
     // Support both old format (direct players object) and new format (with timestamp)
     const serverPlayers = data.players || data;
 
-    // Log periodically to avoid spam
-    if (!self.lastUpdateLog || Date.now() - self.lastUpdateLog > 1000) {
-      console.log('playerUpdates: Updating', Object.keys(serverPlayers).length, 'players');
-      console.log('My ID is:', myId, 'Socket.id is:', socket.id);
-      self.lastUpdateLog = Date.now();
-    }
+    Object.keys(serverPlayers).forEach(function (id) {
+      const serverP = serverPlayers[id];
 
-    // Process updates through EntityManager
-    entityManager.processServerUpdate(serverPlayers, {
-      onLocalPlayerUpdate: function(serverP) {
-        // Update local HUD stats for our player
-        if (serverP.hp !== undefined)    localPlayerStats.hp = serverP.hp;
+      if (!clientPlayers[id]) addOrUpdatePlayerSprite(self, serverP);
+
+      const sprite = clientPlayers[id];
+      if (sprite) {
+        // class sprite selection
+        const effectiveClassKey =
+          (serverP && SHIP_CLASSES[serverP.classKey] ? serverP.classKey : null) ||
+          (id === socketId ? chosenClassKey : null) ||
+          DEFAULT_CLASS;
+
+        applyClassVisual(sprite, effectiveClassKey);
+
+        sprite.x = serverP.x;
+        sprite.y = serverP.y;
+        sprite.rotation = serverP.rotation;
+
+        const nt = playerNameTexts[id];
+        if (nt) {
+          nt.x = serverP.x;
+          nt.y = serverP.y - 70;
+          if (serverP.playerName) nt.setText(serverP.playerName);
+        }
+      }
+
+      // HUD stats for me
+      if (id === socketId) {
+        if (serverP.hp !== undefined) localPlayerStats.hp = serverP.hp;
         if (serverP.maxHp !== undefined) localPlayerStats.maxHp = serverP.maxHp;
-        if (serverP.xp !== undefined)    localPlayerStats.xp = serverP.xp;
+        if (serverP.xp !== undefined) localPlayerStats.xp = serverP.xp;
         if (serverP.maxXp !== undefined) localPlayerStats.maxXp = serverP.maxXp;
 
         UIHud && UIHud.updateHpXp({
@@ -397,112 +361,269 @@ function create() {
           xp: localPlayerStats.xp,
           maxXp: localPlayerStats.maxXp
         });
+
+        // quick proof of what server is sending
+        if (!self._lastClassLog || Date.now() - self._lastClassLog > 1500) {
+          console.log('👀 server classKey:', serverP.classKey, '| local chosen:', chosenClassKey);
+          self._lastClassLog = Date.now();
+        }
       }
     });
 
-    // Handle late-joining camera setup
-    if (!self.cameraSet && entityManager.hasShip(socket.id)) {
-      const localShip = entityManager.getShip(socket.id);
-      if (localShip) {
-        console.log('Late camera setup for:', localShip.getDisplayName());
-        localShip.setCamera(self.cameras.main);
-        entityManager.setLocalPlayer(socket.id);
-        self.cameraSet = true;
-        myId = socket.id;
-      }
-    }
+    ensureCameraFollow(self);
 
-    // Tell UI to redraw minimap with newest players/stars
     UIHud && UIHud.updateMinimap({
-      players: entityManager.getMinimapData(),
-      myId,
+      players: serverPlayers,
+      myId: socketId,
       stars: (starSprites || []).map((s, i) => ({ id: i, x: s.x, y: s.y }))
     });
   });
 }
 
-// ~~~ Update ~~~
+// ~~~~ Update ~~~~
 function update() {
-  // Calculate delta time for physics
-  const now = Date.now();
-  if (!this.lastUpdateTime) this.lastUpdateTime = now;
-  const dt = Math.min((now - this.lastUpdateTime) / 1000, 0.05); // Cap at 50ms to prevent huge jumps
-  this.lastUpdateTime = now;
+  if (!classChosen) return;
 
-  // SEND INPUT STATE TO SERVER (only when connected with valid ID)
-  if (myId && socket && socket.connected) {
-    const inputPayload = {
-      left: cursors.left.isDown,
-      right: cursors.right.isDown,
-      up: cursors.up.isDown,
-      down: cursors.down.isDown
-    };
-    socket.emit('playerInput', inputPayload);
-
-    // Apply client-side prediction for local player
-    entityManager.applyLocalPrediction(inputPayload, dt);
+  // input -> server
+  if (socket && socketId && socket.connected) {
+    socket.emit('playerInput', {
+      left: !!cursors.left.isDown,
+      right: !!cursors.right.isDown,
+      up: !!cursors.up.isDown,
+      down: !!cursors.down.isDown
+    });
   }
 
-  // Update all ships (interpolation for remote players)
-  entityManager.updateAll();
-
-  // Re-anchor minimap in case the camera resizes (fullscreen, etc.)
+  // minimap follow
   MiniMap.anchor(this.minimap, this, { size: 160, margin: 20 });
+  MiniMap.update(this.minimap, clientPlayers, latestStars, socketId);
 
-  // Feed latest data so it follows the player and clamps off-screen dots
-  // Get sprites for backward compatibility with MiniMap
-  const spriteMap = {};
-  entityManager.forEach((ship, id) => {
-    spriteMap[id] = ship.sprite;
-  });
-  MiniMap.update(this.minimap, spriteMap, latestStars, myId);
-
-  // Keep HUD aligned & refreshed
+  // HUD tick
   UIHud && UIHud.tick(this.cameras.main);
   UIHud && UIHud.updateMinimap?.({
-    players: entityManager.getMinimapData(),
-    myId,
+    players: clientPlayers,
+    myId: socketId,
     stars: (starSprites || []).map((s, i) => ({ id: i, x: s.x, y: s.y }))
   });
 }
 
-// ~~~ Helpers ~~~
-function safeDiv(n, d) {
-  if (!d || d === 0) return 0;
-  return n / d;
+// ~~~~ Border visuals ~~~~
+function addWorldBorders(scene) {
+  const borderWidth = 30;
+  const borderColor = 0x880000;
+
+  scene.add.rectangle(WORLD_W / 2, borderWidth / 2, WORLD_W, borderWidth, borderColor).setDepth(0);
+  scene.add.rectangle(WORLD_W / 2, WORLD_H - borderWidth / 2, WORLD_W, borderWidth, borderColor).setDepth(0);
+  scene.add.rectangle(borderWidth / 2, WORLD_H / 2, borderWidth, WORLD_H, borderColor).setDepth(0);
+  scene.add.rectangle(WORLD_W - borderWidth / 2, WORLD_H / 2, borderWidth, WORLD_H, borderColor).setDepth(0);
 }
 
-// Draw debug gridlines (100x100 squares)
-function drawDebugGrid(graphics, worldWidth, worldHeight) {
-  graphics.clear();
-  graphics.lineStyle(1, 0x444444, 0.3);
+// ~~~~ Camera follow helper ~~~~
+function ensureCameraFollow(scene) {
+  if (cameraFollowSet) return;
+  if (!scene || !scene.cameras || !scene.cameras.main) return;
+  if (!socketId) return;
 
-  // Draw lines
-  for (let x = 0; x <= worldWidth; x += 100) {
-    graphics.moveTo(x, 0);
-    graphics.lineTo(x, worldHeight);
+  const mine = clientPlayers[socketId];
+  if (mine) {
+    scene.cameras.main.startFollow(mine, true, 0.12, 0.12);
+    cameraFollowSet = true;
+    console.log('📷 Camera now following my sprite:', socketId);
+  }
+}
+
+// ~~~~ Emit chooseClass (extra-safe payload) ~~~~
+function emitChooseClass(classKey) {
+  const safeKey = SHIP_CLASSES[classKey] ? classKey : DEFAULT_CLASS;
+
+  // send the event your server expects
+  socket.emit('chooseClass', { classKey: safeKey });
+
+  // also send a richer payload (harmless if server ignores)
+  socket.emit('chooseClass', { classKey: safeKey, playerId: socketId, playerName: myId });
+
+  // local apply now (so you SEE it instantly)
+  const mine = clientPlayers[socketId];
+  if (mine) applyClassVisual(mine, safeKey);
+}
+
+// ~~~~ Class -> texture helper ~~~~
+function applyClassVisual(sprite, classKey) {
+  const key = SHIP_CLASSES[classKey] ? classKey : DEFAULT_CLASS;
+  const cfg = SHIP_CLASSES[key] || SHIP_CLASSES[DEFAULT_CLASS];
+
+  if (sprite._classKey !== key) {
+    sprite.setTexture(cfg.spriteKey);
+    sprite.setDisplaySize(53, 40);
+    sprite._classKey = key;
+  }
+}
+
+// ~~~~ Sprite helper ~~~~
+function addOrUpdatePlayerSprite(scene, playerInfo) {
+  const playerId = playerInfo.playerId;
+  let sprite = clientPlayers[playerId];
+
+  const initialClass =
+    (SHIP_CLASSES[playerInfo.classKey] ? playerInfo.classKey : null) ||
+    (playerId === socketId ? chosenClassKey : null) ||
+    DEFAULT_CLASS;
+
+  const cfg = SHIP_CLASSES[initialClass] || SHIP_CLASSES[DEFAULT_CLASS];
+
+  if (!sprite) {
+    console.log('Creating sprite for:', playerInfo.playerName || playerId, 'class:', initialClass);
+
+    sprite = scene.add.sprite(playerInfo.x, playerInfo.y, cfg.spriteKey);
+    sprite._classKey = initialClass;
+    sprite.setOrigin(0.5, 0.5);
+    sprite.setDisplaySize(53, 40);
+
+    if (playerInfo.team === 'red') sprite.setTint(0xff4444);
+    else if (playerInfo.team === 'blue') sprite.setTint(0x4444ff);
+
+    sprite.setDepth(1);
+    sprite.setVisible(true);
+    sprite.setActive(true);
+
+    clientPlayers[playerId] = sprite;
+
+    if (playerInfo.playerName) playerNames[playerId] = playerInfo.playerName;
+
+    const nameText = scene.add.text(playerInfo.x, playerInfo.y - 70, playerInfo.playerName || playerId, {
+      font: '16px Orbitron, sans-serif',
+      fill: '#00ffff',
+      align: 'center',
+      stroke: '#000000',
+      strokeThickness: 2
+    });
+    nameText.setOrigin(0.5, 0.5);
+    nameText.setDepth(2);
+    playerNameTexts[playerId] = nameText;
   }
 
-  for (let y = 0; y <= worldHeight; y += 100) {
-    graphics.moveTo(0, y);
-    graphics.lineTo(worldWidth, y);
+  return sprite;
+}
+
+// ~~~~ Class picker (keyboard only) ~~~~
+function openClassPickerKeyboard(scene, onPick) {
+  console.log('~~~ openClassPickerKeyboard called ~~~');
+
+  try {
+    if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+    window.focus && window.focus();
+  } catch (e) {}
+
+  const cam = scene.cameras.main;
+  const overlay = scene.add.container(0, 0).setScrollFactor(0).setDepth(999999);
+
+  const dim = scene.add.rectangle(0, 0, cam.width, cam.height, 0x000000, 0.80).setOrigin(0, 0);
+  overlay.add(dim);
+
+  const title = scene.add.text(cam.width / 2, 80, 'Choose Your Ship', {
+    fontSize: '26px',
+    fill: '#ffffff',
+    fontFamily: 'monospace'
+  }).setOrigin(0.5, 0.5);
+  overlay.add(title);
+
+  const hint = scene.add.text(
+    cam.width / 2,
+    112,
+    'P/W up   L/S down   ENTER pick   ESC cancel',
+    { fontSize: '14px', fill: '#cccccc', fontFamily: 'monospace' }
+  ).setOrigin(0.5, 0.5);
+  overlay.add(hint);
+
+  const keys = Object.keys(SHIP_CLASSES);
+  if (!keys.length) {
+    overlay.destroy();
+    onPick(DEFAULT_CLASS);
+    return;
   }
 
-  // Add coordinate labels at grid intersections (every 500 units)
-  graphics.lineStyle(1, 0x666666, 0.5); // Slightly brighter for major gridlines
-  for (let x = 0; x <= worldWidth; x += 500) {
-    for (let y = 0; y <= worldHeight; y += 500) {
-      if (x > 0) {
-        graphics.moveTo(x, 0);
-        graphics.lineTo(x, worldHeight);
-      }
-      if (y > 0) {
-        graphics.moveTo(0, y);
-        graphics.lineTo(worldWidth, y);
-      }
+  let idx = 0;
+  const rows = [];
+  const startY = 180;
+
+  keys.forEach((key, i) => {
+    const cfg = SHIP_CLASSES[key];
+    const y = startY + i * 150;
+
+    const row = scene.add.container(cam.width / 2, y);
+    overlay.add(row);
+
+    const box = scene.add.rectangle(0, 0, 520, 120, 0x111111, 0.95).setStrokeStyle(2, 0xffffff, 0.35);
+    row.add(box);
+
+    row.add(scene.add.image(-200, 0, cfg.spriteKey).setScale(1.0));
+
+    row.add(scene.add.text(-130, -26, cfg.name, {
+      fontSize: '20px',
+      fill: '#ffffff',
+      fontFamily: 'monospace'
+    }));
+
+    const st = cfg.stats;
+    row.add(scene.add.text(-130, 6, `HP ${st.maxHp}   SPD ${st.speed}   ACC ${st.accel}`, {
+      fontSize: '14px',
+      fill: '#cccccc',
+      fontFamily: 'monospace'
+    }));
+
+    const tag = scene.add.text(190, 34, '', {
+      fontSize: '14px',
+      fill: '#00ffcc',
+      fontFamily: 'monospace'
+    }).setOrigin(0.5, 0.5);
+    row.add(tag);
+
+    rows.push({ key, box, tag });
+  });
+
+  function refresh() {
+    rows.forEach((r, i) => {
+      const sel = i === idx;
+      r.box.setStrokeStyle(2, sel ? 0x00ffcc : 0xffffff, sel ? 0.9 : 0.35);
+      r.tag.setText(sel ? 'SELECTED' : '');
+    });
+  }
+  refresh();
+
+  const kb = scene.input.keyboard;
+  const handler = (ev) => {
+    const code = ev.code;
+
+    if (code === 'KeyP' || code === 'KeyW') {
+      idx = (idx - 1 + keys.length) % keys.length;
+      refresh();
+      return;
     }
-  }
 
-  graphics.strokePath();
+    if (code === 'KeyL' || code === 'KeyS') {
+      idx = (idx + 1) % keys.length;
+      refresh();
+      return;
+    }
+
+    if (code === 'Enter' || code === 'Space') {
+      cleanup();
+      onPick(keys[idx]);
+      return;
+    }
+
+    if (code === 'Escape') {
+      cleanup();
+      onPick(DEFAULT_CLASS);
+      return;
+    }
+  };
+
+  kb.on('keydown', handler);
+
+  function cleanup() {
+    kb.off('keydown', handler);
+    overlay.destroy();
+  }
 }
 

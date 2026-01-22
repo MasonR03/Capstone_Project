@@ -41,7 +41,6 @@ temp/
 AGENTS.md
 CLAUDE.md
 README-Flatbread.md
-
 # Ignore local server logs
 /server/logs/
 

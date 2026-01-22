@@ -1,7 +1,7 @@
 // ~~~ Login Screen Handler ~~~
 // This script manages the login overlay and passes player name to the game
 
-window.playerName = null;  // Global variable to store the logged-in player name
+let playerName = null;  // Global variable to store the logged-in player name
 
 document.addEventListener('DOMContentLoaded', function() {
   const loginForm = document.getElementById('login-form');
@@ -21,9 +21,9 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     // Store the player name globally
-    window.playerName = name;
-    
-    console.log('👤 Player logged in as:', window.playerName);
+    playerName = name;
+
+    console.log('👤 Player logged in as:', playerName);
 
     // Hide the login overlay
     loginOverlay.classList.add('hidden');

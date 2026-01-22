@@ -1,22 +1,9 @@
-// server/authoritative_server/js/ui/index.js
-// Small wrapper so the server code stays clean.
-// It also adapts to your public client event names.
-
 function emitScore(target, scores) {
   // accepts either io or socket
   target.emit('updateScore', scores);
 }
 
-/**
- * Your public client currently listens to **'starLocation'** (singular)
- * and only supports ONE star sprite. Your server tracks 5 stars.
- *
- * Option A (no client change): send only the first star as 'starLocation'.
- * Option B (recommended): update the client to handle many stars with
- * the 'starsLocation' event (array).
- *
- * We’ll support BOTH here for safety.
- */
+
 function emitStars(target, starsArray) {
   // Send array for multi-star clients:
   target.emit('starsLocation', starsArray);

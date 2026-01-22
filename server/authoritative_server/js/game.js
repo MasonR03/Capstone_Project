@@ -137,6 +137,7 @@ function initializeServer(io) {
       }
     });
 
+
     // Handle input
     socket.on('playerInput', (input) => {
       const ship = entityManager.getShip(socket.id);
