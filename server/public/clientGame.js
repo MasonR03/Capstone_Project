@@ -2,25 +2,14 @@
 let socket = null;
 
 // ~~~ Global client state ~~~
-const clientPlayers = {};   // playerId -> Phaser sprite
-const playerNames = {};     // playerId -> player name
-const playerNameTexts = {}; // playerId -> Phaser text object
+let entityManager = null;   // ClientEntityManager instance
 let myId = null;            // Player name (set from login)
 let socketId = null;        // socket.id from server
 let pendingStarPositions = null; // Store star positions received before scene creation
 let UIHud = null; // controller from UI.init
 
 // ~~~ Movement sync state ~~~
-const INTERPOLATION_DELAY = 100;  // ms behind server for remote players
 const SNAP_THRESHOLD = 10000;     // squared distance; snap if error > 100 units
-const positionBuffer = {};        // playerId -> [{timestamp, x, y, rotation, vx, vy}]
-let serverTimeOffset = 0;
-let lastServerState = {};         // playerId -> {x, y, rotation, vx, vy} for interpolation
-
-// Local player prediction state
-let localPredicted = { x: 0, y: 0, rotation: 0, vx: 0, vy: 0 };
-let localServerState = { x: 0, y: 0, rotation: 0, vx: 0, vy: 0 };
-let predictionInitialized = false;
 
 // Initialize socket connection after login
 function initializeSocket() {
@@ -182,18 +171,29 @@ function create() {
   this.debugGridGraphics.setDepth(-1); // Behind everything else
   this.debugGridGraphics.setVisible(false); // Hidden by default
 
+  // Initialize EntityManager
+  entityManager = new ClientEntityManager(this);
+
   // Initialize debug tools
   DebugTools.init(game, () => {
     // Callback to get current player and all players
-    if (myId && clientPlayers[myId]) {
+    const localShip = entityManager ? entityManager.getLocalShip() : null;
+    const allSprites = {};
+    const names = {};
+    if (entityManager) {
+      entityManager.forEach((ship, id) => {
+        allSprites[id] = ship.sprite;
+        names[id] = ship.playerName;
+      });
+    }
+    if (localShip) {
       return {
-        player: clientPlayers[myId],
-        allPlayers: clientPlayers,
-        playerNames: playerNames
+        player: localShip.sprite,
+        allPlayers: allSprites,
+        playerNames: names
       };
     }
-    // No local sprite in multiplayer mode
-    return { allPlayers: clientPlayers, playerNames: playerNames };
+    return { allPlayers: allSprites, playerNames: names };
   }, this.debugGridGraphics);
 
   // physics world size
@@ -306,71 +306,33 @@ function create() {
     console.log('My socket ID is:', myId, 'Socket.id is:', socket.id);
     console.log('Player IDs received:', Object.keys(players));
 
-    Object.keys(players).forEach(function (id) {
-      // Create/update sprites for all players
-      const sprite = addOrUpdatePlayerSprite(self, players[id]);
-
-      // If this is our player, set up camera follow (check both myId and socket.id)
-      if (id === myId || id === socket.id) {
-        console.log('Found my player! Setting camera to follow:', id);
-        myId = id; // Ensure myId is set
-
-        if (sprite) {
-          self.cameras.main.startFollow(sprite, true, 0.1, 0.1);
-          console.log('Camera now following sprite at:', sprite.x, sprite.y);
-
-          // Initialize local prediction state
-          const playerData = players[id];
-          localPredicted.x = playerData.x;
-          localPredicted.y = playerData.y;
-          localPredicted.rotation = playerData.rotation || 0;
-          localPredicted.vx = playerData.velocityX || 0;
-          localPredicted.vy = playerData.velocityY || 0;
-          predictionInitialized = true;
-          console.log('Initialized localPredicted:', localPredicted);
-        } else {
-          console.error('ERROR: Could not find sprite for camera follow!');
-        }
-      }
-    });
+    // Use EntityManager to initialize all ships
+    entityManager.initializeFromServer(players, socket.id, self.cameras.main);
 
     // Double-check we found our player
-    if (!clientPlayers[myId] && !clientPlayers[socket.id]) {
+    if (!entityManager.getLocalShip()) {
       console.warn('WARNING: Did not find our player in currentPlayers!');
       console.warn('Our ID:', myId, 'Socket ID:', socket.id);
-      console.warn('Available IDs:', Object.keys(clientPlayers));
+      console.warn('Available IDs:', entityManager.getAllIds());
 
       // Fallback: follow the first player if we can't find ours
-      const firstPlayerId = Object.keys(clientPlayers)[0];
-      if (firstPlayerId) {
-        console.log('Fallback: Following first available player:', firstPlayerId);
-        self.cameras.main.startFollow(clientPlayers[firstPlayerId], true, 0.1, 0.1);
+      const firstId = entityManager.getAllIds()[0];
+      if (firstId) {
+        const firstShip = entityManager.getShip(firstId);
+        if (firstShip) {
+          console.log('Fallback: Following first available player:', firstId);
+          firstShip.setCamera(self.cameras.main);
+        }
       }
     }
   });
 
   socket.on('newPlayer', function (playerInfo) {
-    addOrUpdatePlayerSprite(self, playerInfo);
+    entityManager.addOrUpdateShip(playerInfo);
   });
 
   socket.on('playerDisconnected', function (playerId) {
-    if (clientPlayers[playerId]) {
-      clientPlayers[playerId].destroy();
-      delete clientPlayers[playerId];
-    }
-    // Clean up server state cache
-    if (lastServerState[playerId]) {
-      delete lastServerState[playerId];
-    }
-    // Clean up name text
-    if (playerNameTexts[playerId]) {
-      playerNameTexts[playerId].destroy();
-      delete playerNameTexts[playerId];
-    }
-    // Clean up player name
-    if (playerNames[playerId]) {
-      delete playerNames[playerId];
-    }
+    entityManager.removeShip(playerId);
   });
 
   // Keep backward compatibility for single star updates (if needed)
@@ -389,71 +351,10 @@ function create() {
       self.lastUpdateLog = Date.now();
     }
 
-    Object.keys(serverPlayers).forEach(function (id) {
-      const serverP = serverPlayers[id];
-
-      // Create sprite if it doesn't exist (handles late-joining players)
-      if (!clientPlayers[id]) {
-        const displayName = serverP.playerName || id;
-        console.log('Late player join detected, creating sprite for:', displayName);
-        addOrUpdatePlayerSprite(self, serverP);
-
-        // Check if this is our player and set camera
-        if (id === socket.id && !self.cameraSet) {
-          console.log('This is MY player! Setting camera to follow:', displayName);
-          self.cameras.main.startFollow(clientPlayers[id], true, 0.1, 0.1);
-          self.cameraSet = true;
-          myId = id;
-        }
-      }
-
-      // Store latest server state for interpolation
-      lastServerState[id] = {
-        x: serverP.x,
-        y: serverP.y,
-        rotation: serverP.rotation,
-        vx: serverP.velocityX || 0,
-        vy: serverP.velocityY || 0,
-        timestamp: Date.now()
-      };
-
-      // Handle local player prediction/reconciliation
-      if (id === myId || id === socket.id) {
-        if (!predictionInitialized) {
-          // First time - initialize prediction to server state
-          localPredicted.x = serverP.x;
-          localPredicted.y = serverP.y;
-          localPredicted.rotation = serverP.rotation;
-          localPredicted.vx = serverP.velocityX || 0;
-          localPredicted.vy = serverP.velocityY || 0;
-          predictionInitialized = true;
-        } else {
-          // Reconcile: blend prediction toward server state
-          reconcileLocalPlayer(serverP);
-        }
-        // Update local server state for reference
-        localServerState.x = serverP.x;
-        localServerState.y = serverP.y;
-        localServerState.rotation = serverP.rotation;
-        localServerState.vx = serverP.velocityX || 0;
-        localServerState.vy = serverP.velocityY || 0;
-      }
-
-      // Update player name text content (position updated in smoothInterpolatePlayers)
-      if (playerNameTexts[id] && serverP.playerName) {
-        playerNameTexts[id].setText(serverP.playerName);
-        playerNames[id] = serverP.playerName;
-      }
-
-      // Make sure sprite stays visible
-      if (clientPlayers[id] && !clientPlayers[id].visible) {
-        const displayName = serverP.playerName || id;
-        console.warn('Sprite was invisible, making visible:', displayName);
-        clientPlayers[id].setVisible(true);
-      }
-
-      // Update local HUD stats for our player (and refresh HP/XP bar)
-      if (id === myId) {
+    // Process updates through EntityManager
+    entityManager.processServerUpdate(serverPlayers, {
+      onLocalPlayerUpdate: function(serverP) {
+        // Update local HUD stats for our player
         if (serverP.hp !== undefined)    localPlayerStats.hp = serverP.hp;
         if (serverP.maxHp !== undefined) localPlayerStats.maxHp = serverP.maxHp;
         if (serverP.xp !== undefined)    localPlayerStats.xp = serverP.xp;
@@ -468,9 +369,21 @@ function create() {
       }
     });
 
-    // tell UI to redraw minimap with newest players/stars
+    // Handle late-joining camera setup
+    if (!self.cameraSet && entityManager.hasShip(socket.id)) {
+      const localShip = entityManager.getShip(socket.id);
+      if (localShip) {
+        console.log('Late camera setup for:', localShip.getDisplayName());
+        localShip.setCamera(self.cameras.main);
+        entityManager.setLocalPlayer(socket.id);
+        self.cameraSet = true;
+        myId = socket.id;
+      }
+    }
+
+    // Tell UI to redraw minimap with newest players/stars
     UIHud && UIHud.updateMinimap({
-      players: serverPlayers,
+      players: entityManager.getMinimapData(),
       myId,
       stars: (starSprites || []).map((s, i) => ({ id: i, x: s.x, y: s.y }))
     });
@@ -479,10 +392,6 @@ function create() {
 
 // ~~~ Update ~~~
 function update() {
-  // LOCAL MOVEMENT DISABLED for multiplayer
-  // Server handles all physics - client only sends input and displays results
-  // This prevents the double ship issue where local and server ships were both rendered
-
   // Calculate delta time for physics
   const now = Date.now();
   if (!this.lastUpdateTime) this.lastUpdateTime = now;
@@ -490,7 +399,7 @@ function update() {
   this.lastUpdateTime = now;
 
   // SEND INPUT STATE TO SERVER (only when connected with valid ID)
-  if (myId && socket.connected) {
+  if (myId && socket && socket.connected) {
     const inputPayload = {
       left: cursors.left.isDown,
       right: cursors.right.isDown,
@@ -500,103 +409,33 @@ function update() {
     socket.emit('playerInput', inputPayload);
 
     // Apply client-side prediction for local player
-    if (predictionInitialized && clientPlayers[myId]) {
-      applyLocalPrediction(inputPayload, dt);
-    }
+    entityManager.applyLocalPrediction(inputPayload, dt);
   }
 
-  // Interpolate remote players toward their server positions
-  smoothInterpolatePlayers();
+  // Update all ships (interpolation for remote players)
+  entityManager.updateAll();
 
   // Re-anchor minimap in case the camera resizes (fullscreen, etc.)
   MiniMap.anchor(this.minimap, this, { size: 160, margin: 20 });
 
   // Feed latest data so it follows the player and clamps off-screen dots
-  MiniMap.update(this.minimap, clientPlayers, latestStars, myId);
+  // Get sprites for backward compatibility with MiniMap
+  const spriteMap = {};
+  entityManager.forEach((ship, id) => {
+    spriteMap[id] = ship.sprite;
+  });
+  MiniMap.update(this.minimap, spriteMap, latestStars, myId);
 
-  // Keep HUD aligned & refreshed (your existing HUD API)
+  // Keep HUD aligned & refreshed
   UIHud && UIHud.tick(this.cameras.main);
   UIHud && UIHud.updateMinimap?.({
-    players: clientPlayers,
+    players: entityManager.getMinimapData(),
     myId,
     stars: (starSprites || []).map((s, i) => ({ id: i, x: s.x, y: s.y }))
   });
 }
 
 // ~~~ Helpers ~~~
-function addOrUpdatePlayerSprite(scene, playerInfo) {
-  let sprite = clientPlayers[playerInfo.playerId];
-  const playerId = playerInfo.playerId;
-  const playerDisplayName = playerInfo.playerName || playerInfo.playerId;
-
-  if (!sprite) {
-    console.log('Creating sprite for player:', playerDisplayName, 'at', playerInfo.x, playerInfo.y);
-
-    try {
-      // Try to use the ship texture
-      if (scene.textures.exists('ship')) {
-        sprite = scene.add.sprite(playerInfo.x, playerInfo.y, 'ship');
-        sprite.setDisplaySize(53, 40);
-        console.log('Ship texture loaded successfully');
-      } else {
-        // Fallback: create a colored rectangle if texture not found
-        console.warn('Ship texture not found, using fallback rectangle');
-        sprite = scene.add.rectangle(playerInfo.x, playerInfo.y, 53, 40);
-      }
-
-      sprite.setOrigin(0.5, 0.5);
-
-      // tint by team
-      if (playerInfo.team === 'red') {
-        sprite.setTint(0xff4444);
-      } else if (playerInfo.team === 'blue') {
-        sprite.setTint(0x4444ff);
-      }
-
-      // Make sure sprite is visible
-      sprite.setVisible(true);
-      sprite.setDepth(1);
-      sprite.setActive(true);
-
-      clientPlayers[playerId] = sprite;
-
-      // Store player name
-      if (playerInfo.playerName) {
-        playerNames[playerId] = playerInfo.playerName;
-      }
-
-      // Create player name text label
-      const nameText = scene.add.text(playerInfo.x, playerInfo.y - 70, playerDisplayName, {
-        font: '16px Orbitron, sans-serif',
-        fill: '#00ffff',
-        align: 'center',
-        stroke: '#000000',
-        strokeThickness: 2
-      });
-      nameText.setOrigin(0.5, 0.5);
-      nameText.setDepth(2);
-      playerNameTexts[playerId] = nameText;
-
-      // Set initial position and rotation
-      sprite.x = playerInfo.x;
-      sprite.y = playerInfo.y;
-      sprite.rotation = playerInfo.rotation || 0;
-
-      console.log('Sprite created successfully for:', playerDisplayName);
-    } catch (error) {
-      console.error('Error creating sprite:', error);
-    }
-  }
-  // Position updates will happen in playerUpdates handler
-
-  return sprite;
-}
-
-// Note: collectStar(...) stays unused in multiplayer mode
-function collectStar() {
-  // local demo only
-}
-
 function safeDiv(n, d) {
   if (!d || d === 0) return 0;
   return n / d;
@@ -636,174 +475,3 @@ function drawDebugGrid(graphics, worldWidth, worldHeight) {
   graphics.strokePath();
 }
 
-// ~~~ Movement sync utilities ~~~
-function lerp(a, b, t) {
-  return a + (b - a) * Math.max(0, Math.min(1, t));
-}
-
-function lerpAngle(a, b, t) {
-  let diff = b - a;
-  while (diff < -Math.PI) diff += Math.PI * 2;
-  while (diff > Math.PI) diff -= Math.PI * 2;
-  return a + diff * Math.max(0, Math.min(1, t));
-}
-
-function getServerTime() {
-  return Date.now() + serverTimeOffset;
-}
-
-// Interpolate remote players and apply local prediction
-function smoothInterpolatePlayers() {
-  Object.keys(clientPlayers).forEach(function (id) {
-    const sprite = clientPlayers[id];
-    if (!sprite) return;
-
-    const serverState = lastServerState[id];
-    if (!serverState) return;
-
-    const isLocalPlayer = (id === myId || id === socketId);
-
-    if (isLocalPlayer) {
-      // Local player uses prediction - sprite already updated in applyLocalPrediction
-      // Just update name text
-      if (playerNameTexts[id]) {
-        playerNameTexts[id].x = sprite.x;
-        playerNameTexts[id].y = sprite.y - 70;
-      }
-    } else {
-      // Remote players: smooth interpolation toward server state
-      const lerpFactor = 0.15; // How fast to blend toward server position
-
-      sprite.x = lerp(sprite.x, serverState.x, lerpFactor);
-      sprite.y = lerp(sprite.y, serverState.y, lerpFactor);
-      sprite.rotation = lerpAngle(sprite.rotation, serverState.rotation, lerpFactor);
-
-      // Update name text position
-      if (playerNameTexts[id]) {
-        playerNameTexts[id].x = sprite.x;
-        playerNameTexts[id].y = sprite.y - 70;
-      }
-    }
-  });
-}
-
-// Apply local prediction for immediate responsiveness
-function applyLocalPrediction(input, dt) {
-  if (!clientPlayers[myId]) return;
-
-  const sprite = clientPlayers[myId];
-
-  // Physics constants (must match server exactly)
-  const angularSpeed = 300 * (Math.PI / 180); // 5.236 rad/s
-  const acceleration = 200;
-  const maxVelocity = 400;
-  const dragFactor = 0.98;
-
-  // Apply rotation
-  if (input.left) {
-    localPredicted.rotation -= angularSpeed * dt;
-  } else if (input.right) {
-    localPredicted.rotation += angularSpeed * dt;
-  }
-
-  // Apply acceleration/deceleration
-  if (input.up) {
-    const angle = localPredicted.rotation + 1.5; // Match server's angle offset
-    localPredicted.vx += Math.cos(angle) * acceleration * dt;
-    localPredicted.vy += Math.sin(angle) * acceleration * dt;
-  } else if (input.down) {
-    // Braking
-    const currentVel = Math.sqrt(localPredicted.vx * localPredicted.vx + localPredicted.vy * localPredicted.vy);
-    if (currentVel > 50) {
-      const brakeFactor = Math.pow(0.9, dt * 60); // Normalize to 60fps
-      localPredicted.vx *= brakeFactor;
-      localPredicted.vy *= brakeFactor;
-    } else if (currentVel > 5) {
-      const brakeFactor = Math.pow(0.7, dt * 60);
-      localPredicted.vx *= brakeFactor;
-      localPredicted.vy *= brakeFactor;
-    } else {
-      localPredicted.vx = 0;
-      localPredicted.vy = 0;
-    }
-  } else {
-    // Drag when coasting
-    const currentSpeed = Math.sqrt(localPredicted.vx * localPredicted.vx + localPredicted.vy * localPredicted.vy);
-    if (currentSpeed > 1) {
-      const dragPerFrame = Math.pow(dragFactor, dt * 60); // Normalize to 60fps
-      localPredicted.vx *= dragPerFrame;
-      localPredicted.vy *= dragPerFrame;
-    } else {
-      localPredicted.vx = 0;
-      localPredicted.vy = 0;
-    }
-  }
-
-  // Clamp velocity to max
-  const speed = Math.sqrt(localPredicted.vx * localPredicted.vx + localPredicted.vy * localPredicted.vy);
-  if (speed > maxVelocity) {
-    localPredicted.vx = (localPredicted.vx / speed) * maxVelocity;
-    localPredicted.vy = (localPredicted.vy / speed) * maxVelocity;
-  }
-
-  // Update position
-  localPredicted.x += localPredicted.vx * dt;
-  localPredicted.y += localPredicted.vy * dt;
-
-  // Bounds checking
-  if (localPredicted.x < BORDER_BUFFER) {
-    localPredicted.x = BORDER_BUFFER;
-    localPredicted.vx = 0;
-  } else if (localPredicted.x > WORLD_W - BORDER_BUFFER) {
-    localPredicted.x = WORLD_W - BORDER_BUFFER;
-    localPredicted.vx = 0;
-  }
-  if (localPredicted.y < BORDER_BUFFER) {
-    localPredicted.y = BORDER_BUFFER;
-    localPredicted.vy = 0;
-  } else if (localPredicted.y > WORLD_H - BORDER_BUFFER) {
-    localPredicted.y = WORLD_H - BORDER_BUFFER;
-    localPredicted.vy = 0;
-  }
-
-  // Apply to sprite
-  sprite.x = localPredicted.x;
-  sprite.y = localPredicted.y;
-  sprite.rotation = localPredicted.rotation;
-}
-
-// Reconcile local prediction with server state
-function reconcileLocalPlayer(serverP) {
-  // Calculate prediction error
-  const dx = serverP.x - localPredicted.x;
-  const dy = serverP.y - localPredicted.y;
-  const errorSquared = dx * dx + dy * dy;
-
-  // Blend factor - how much to trust server vs prediction
-  // Lower = smoother but slower correction, Higher = snappier but more jittery
-  const blendFactor = 0.1;
-
-  if (errorSquared > SNAP_THRESHOLD) {
-    // Large error - snap to server
-    localPredicted.x = serverP.x;
-    localPredicted.y = serverP.y;
-    localPredicted.rotation = serverP.rotation;
-    localPredicted.vx = serverP.velocityX || 0;
-    localPredicted.vy = serverP.velocityY || 0;
-  } else {
-    // Small error - gently blend toward server
-    localPredicted.x = lerp(localPredicted.x, serverP.x, blendFactor);
-    localPredicted.y = lerp(localPredicted.y, serverP.y, blendFactor);
-    localPredicted.rotation = lerpAngle(localPredicted.rotation, serverP.rotation, blendFactor);
-    // Also blend velocity to keep physics in sync
-    localPredicted.vx = lerp(localPredicted.vx, serverP.velocityX || 0, blendFactor);
-    localPredicted.vy = lerp(localPredicted.vy, serverP.velocityY || 0, blendFactor);
-  }
-
-  // Update sprite with blended position
-  if (clientPlayers[myId]) {
-    clientPlayers[myId].x = localPredicted.x;
-    clientPlayers[myId].y = localPredicted.y;
-    clientPlayers[myId].rotation = localPredicted.rotation;
-  }
-}
