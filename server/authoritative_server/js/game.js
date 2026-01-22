@@ -116,7 +116,7 @@ function initializeServer(io) {
 
     // Create physics body for player (53x40 matching client ship size)
     const playerBody = physics.add.body(startX, startY, 53, 40);
-    playerBody.setDrag(0);
+    playerBody.setDrag(0); // We handle drag manually for smooth directional deceleration
     playerBody.setMaxVelocity(400);
     playerBody.playerId = socket.id;
     playerBodies.set(socket.id, playerBody);
@@ -307,6 +307,22 @@ function updateGame(io, frameCount, delta) {
       }
     } else {
       body.setAcceleration(0, 0);
+
+      // Custom directional drag - only when not accelerating
+      // This preserves direction by reducing velocity proportionally
+      const currentSpeed = body.velocity.length();
+      if (currentSpeed > 1) {
+        // Apply 2% drag per frame - reduces speed but preserves direction
+        // At 60 FPS: 0.98^60 ≈ 0.30 (loses ~70% speed per second)
+        const dragFactor = 0.98;
+        body.setVelocity(
+          body.velocity.x * dragFactor,
+          body.velocity.y * dragFactor
+        );
+      } else {
+        // Snap to zero when nearly stopped to prevent micro-drifting
+        body.setVelocity(0, 0);
+      }
     }
 
     // Bounds checking with buffer
