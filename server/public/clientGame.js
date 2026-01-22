@@ -34,8 +34,9 @@ function initializeSocket() {
   socket.on('connect', function() {
     socketId = socket.id;
     // Use the player name from login as the myId for display purposes
-    if (!myId && typeof playerName !== 'undefined' && playerName) {
-      myId = playerName;
+    // Note: window.playerName is set by login.js before this script runs
+    if (!myId && typeof window.playerName !== 'undefined' && window.playerName) {
+      myId = window.playerName;
     } else if (!myId) {
       myId = socket.id;
     }
@@ -132,7 +133,7 @@ let game = null;
 document.addEventListener('DOMContentLoaded', function() {
   // Check if login is complete every 100ms
   const loginCheckInterval = setInterval(function() {
-    if (typeof window.loginComplete !== 'undefined' && window.loginComplete === true && typeof playerName !== 'undefined' && playerName) {
+    if (typeof window.loginComplete !== 'undefined' && window.loginComplete === true && typeof window.playerName !== 'undefined' && window.playerName) {
       clearInterval(loginCheckInterval);
       console.log('🎮 Login complete. Initializing game and socket...');
       
