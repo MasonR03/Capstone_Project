@@ -193,7 +193,24 @@ class DebugTools {
     }
 
     // Get player info from callback
-    const playerInfo = this.getPlayerCallback ? this.getPlayerCallback() : null;
+    let playerInfo = this.getPlayerCallback ? this.getPlayerCallback() : null;
+
+    // Fallback: pull from scene entity manager if callback doesn't provide a player
+    if ((!playerInfo || !playerInfo.player) && scene && scene.entityManager) {
+      const localShip = scene.entityManager.getLocalShip ? scene.entityManager.getLocalShip() : null;
+      const shipsMap = scene.entityManager.ships || new Map();
+      const allShips = shipsMap instanceof Map ? Object.fromEntries(shipsMap) : shipsMap;
+
+      playerInfo = {
+        player: localShip || null,
+        allPlayers: allShips || {},
+        playerNames: Object.keys(allShips || {}).reduce((acc, id) => {
+          const ship = allShips[id];
+          acc[id] = ship && ship.playerName ? ship.playerName : id;
+          return acc;
+        }, {})
+      };
+    }
 
     // Update player count and names
     if (playerInfo && playerInfo.allPlayers) {
@@ -231,6 +248,14 @@ class DebugTools {
         el.posY.textContent = Math.round(player.predicted.y);
         const velX = player.predicted.vx || 0;
         const velY = player.predicted.vy || 0;
+        const speed = Math.round(Math.sqrt(velX * velX + velY * velY));
+        el.velocity.textContent = speed;
+      } else if (player.serverState) {
+        // ClientShip without prediction initialized
+        el.posX.textContent = Math.round(player.serverState.x);
+        el.posY.textContent = Math.round(player.serverState.y);
+        const velX = player.serverState.vx || 0;
+        const velY = player.serverState.vy || 0;
         const speed = Math.round(Math.sqrt(velX * velX + velY * velY));
         el.velocity.textContent = speed;
       } else if (player.body) {
