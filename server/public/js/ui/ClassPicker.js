@@ -13,7 +13,10 @@ const getConfig = () => {
       hunter: { name: 'Hunter', spriteKey: 'ship_hunter', stats: { maxHp: 90, speed: 260, accel: 220 } },
       tanker: { name: 'Tanker', spriteKey: 'ship_tanker', stats: { maxHp: 160, speed: 180, accel: 160 } }
     },
-    defaultClass: 'hunter'
+    defaultClass: 'hunter',
+    sprites: {
+      ship: { width: 53, height: 40 }
+    }
   };
 };
 
@@ -27,6 +30,7 @@ class ClassPicker {
     const config = getConfig();
     this.scene = scene;
     this.onPick = onPick;
+    this.config = config;
     this.shipClasses = config.shipClasses;
     this.defaultClass = config.defaultClass;
 
@@ -88,7 +92,7 @@ class ClassPicker {
     const hint = this.scene.add.text(
       cam.width / 2,
       112,
-      'P/W up   L/S down   ENTER pick   ESC cancel',
+      '↑/W up   ↓/S down   ENTER pick   ESC cancel',
       { fontSize: '14px', fill: '#cccccc', fontFamily: 'monospace' }
     ).setOrigin(0.5, 0.5);
     this.overlay.add(hint);
@@ -111,8 +115,13 @@ class ClassPicker {
   _buildRows(cam) {
     const startY = 180;
 
+    const config = this.config || getConfig();
+    const shipWidth = (config.sprites && config.sprites.ship && config.sprites.ship.width) || 53;
+    const shipHeight = (config.sprites && config.sprites.ship && config.sprites.ship.height) || 40;
+    const shipScale = 1.8;
+
     this.classKeys.forEach((key, i) => {
-      const cfg = this.shipClasses[key];
+      const classCfg = this.shipClasses[key];
       const y = startY + i * 150;
 
       // Row container
@@ -125,11 +134,12 @@ class ClassPicker {
       row.add(box);
 
       // Ship image
-      const shipImg = this.scene.add.image(-200, 0, cfg.spriteKey).setScale(1.0);
+      const shipImg = this.scene.add.image(-200, 0, classCfg.spriteKey);
+      shipImg.setDisplaySize(shipWidth * shipScale, shipHeight * shipScale);
       row.add(shipImg);
 
       // Ship name
-      const nameText = this.scene.add.text(-130, -26, cfg.name, {
+      const nameText = this.scene.add.text(-130, -26, classCfg.name, {
         fontSize: '20px',
         fill: '#ffffff',
         fontFamily: 'monospace'
@@ -137,7 +147,7 @@ class ClassPicker {
       row.add(nameText);
 
       // Stats
-      const st = cfg.stats;
+      const st = classCfg.stats;
       const statsText = this.scene.add.text(-130, 6, `HP ${st.maxHp}   SPD ${st.speed}   ACC ${st.accel}`, {
         fontSize: '14px',
         fill: '#cccccc',
@@ -152,6 +162,18 @@ class ClassPicker {
         fontFamily: 'monospace'
       }).setOrigin(0.5, 0.5);
       row.add(tag);
+
+      // Click / hover handling
+      box.setInteractive({ useHandCursor: true });
+      box.on('pointerover', () => {
+        this.selectedIndex = i;
+        this._refresh();
+      });
+      box.on('pointerdown', () => {
+        this.selectedIndex = i;
+        this._refresh();
+        this._complete(this.classKeys[this.selectedIndex]);
+      });
 
       this.rows.push({ key, box, tag });
     });
@@ -168,14 +190,14 @@ class ClassPicker {
       const code = ev.code;
 
       // Navigate up
-      if (code === 'KeyP' || code === 'KeyW') {
+      if (code === 'KeyP' || code === 'KeyW' || code === 'ArrowUp') {
         this.selectedIndex = (this.selectedIndex - 1 + this.classKeys.length) % this.classKeys.length;
         this._refresh();
         return;
       }
 
       // Navigate down
-      if (code === 'KeyL' || code === 'KeyS') {
+      if (code === 'KeyL' || code === 'KeyS' || code === 'ArrowDown') {
         this.selectedIndex = (this.selectedIndex + 1) % this.classKeys.length;
         this._refresh();
         return;
@@ -184,6 +206,22 @@ class ClassPicker {
       // Select
       if (code === 'Enter' || code === 'Space') {
         this._complete(this.classKeys[this.selectedIndex]);
+        return;
+      }
+
+      // Direct numeric select
+      if (code === 'Digit1' || code === 'Numpad1') {
+        this.selectedIndex = 0;
+        this._refresh();
+        this._complete(this.classKeys[this.selectedIndex]);
+        return;
+      }
+      if (code === 'Digit2' || code === 'Numpad2') {
+        if (this.classKeys.length > 1) {
+          this.selectedIndex = 1;
+          this._refresh();
+          this._complete(this.classKeys[this.selectedIndex]);
+        }
         return;
       }
 
