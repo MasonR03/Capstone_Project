@@ -146,6 +146,11 @@ class ClientShip {
       timestamp: Date.now()
     };
 
+    // Update class if server changed it
+    if (serverState.classKey && serverState.classKey !== this.classKey) {
+      this._applyClassKey(serverState.classKey);
+    }
+
     // Update player name if changed
     if (serverState.playerName && serverState.playerName !== this.playerName) {
       this.playerName = serverState.playerName;
@@ -159,6 +164,35 @@ class ClientShip {
       console.warn('Sprite was invisible, making visible:', this.getDisplayName());
       this.sprite.setVisible(true);
     }
+  }
+
+  /**
+   * Apply a new class key and update visuals/stats
+   * @param {string} newClassKey
+   * @private
+   */
+  _applyClassKey(newClassKey) {
+    const classConfig = GameConfig.shipClasses[newClassKey] || GameConfig.shipClasses[GameConfig.defaultClass];
+    const safeKey = classConfig ? newClassKey : GameConfig.defaultClass;
+
+    this.classKey = safeKey;
+    this.stats.maxSpeed = classConfig.stats.speed || this.stats.maxSpeed;
+    this.stats.acceleration = classConfig.stats.accel || this.stats.acceleration;
+
+    const spriteKey = classConfig.spriteKey;
+    if (this.sprite && typeof this.sprite.setTexture === 'function' && this.scene.textures.exists(spriteKey)) {
+      this.sprite.setTexture(spriteKey);
+      this.sprite.setDisplaySize(GameConfig.sprites.ship.width, GameConfig.sprites.ship.height);
+      this._applyTeamTint();
+      return;
+    }
+
+    // Fallback: rebuild sprite if texture swap isn't possible
+    if (this.sprite) {
+      this.sprite.destroy();
+      this.sprite = null;
+    }
+    this._createSprite({});
   }
 
   /**

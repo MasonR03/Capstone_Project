@@ -9,6 +9,7 @@ class Ship {
     this.id = id;
     this.x = x;
     this.y = y;
+    this.classKey = config.classKey || 'hunter';
     this.rotation = 0;
     this.velocityX = 0;
     this.velocityY = 0;
@@ -191,6 +192,7 @@ class Ship {
   serialize() {
     return {
       playerId: this.id,
+      classKey: this.classKey,
       x: this.x,
       y: this.y,
       rotation: this.rotation,

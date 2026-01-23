@@ -14,6 +14,13 @@ const WORLD_HEIGHT = 2000;
 const BORDER_BUFFER = 20;
 const XP_PER_STAR = 10;
 
+// Ship class definitions (server-side)
+const SHIP_CLASSES = {
+  hunter: { maxHp: 90, speed: 260, accel: 220 },
+  tanker: { maxHp: 160, speed: 180, accel: 160 }
+};
+const DEFAULT_CLASS = 'hunter';
+
 // Cooldown so a star can't trigger multiple times in the same instant
 const starPickupCooldown = new Map(); // starId -> lastTriggerFrame
 
@@ -98,8 +105,14 @@ function initializeServer(io) {
     const startX = Math.floor(Math.random() * (WORLD_WIDTH - 100)) + 50;
     const startY = Math.floor(Math.random() * (WORLD_HEIGHT - 100)) + 50;
 
+    const classConfig = SHIP_CLASSES[DEFAULT_CLASS];
     const ship = entityManager.createShip(socket.id, startX, startY, {
-      team: Math.random() < 0.5 ? 'red' : 'blue'
+      team: Math.random() < 0.5 ? 'red' : 'blue',
+      classKey: DEFAULT_CLASS,
+      maxSpeed: classConfig.speed,
+      acceleration: classConfig.accel,
+      maxHp: classConfig.maxHp,
+      hp: classConfig.maxHp
     });
 
     // Set up collision detection between this player and all stars
@@ -135,6 +148,28 @@ function initializeServer(io) {
         ship.setPlayerName(playerName);
         console.log('👤 Player', socket.id.substring(0, 8), 'set name to:', playerName);
       }
+    });
+
+    // Handle class selection from client
+    socket.on('chooseClass', (payload) => {
+      const ship = entityManager.getShip(socket.id);
+      if (!ship) return;
+
+      const requestedKey = typeof payload === 'string' ? payload : payload?.classKey;
+      const safeKey = SHIP_CLASSES[requestedKey] ? requestedKey : DEFAULT_CLASS;
+      const cfg = SHIP_CLASSES[safeKey];
+
+      ship.classKey = safeKey;
+      ship.stats.maxSpeed = cfg.speed;
+      ship.stats.acceleration = cfg.accel;
+      ship.maxHp = cfg.maxHp;
+      ship.hp = Math.min(ship.hp, ship.maxHp) || ship.maxHp;
+
+      if (ship.body) {
+        ship.body.setMaxVelocity(ship.stats.maxSpeed);
+      }
+
+      console.log('🚀 Player', ship.getDisplayName(), 'chose class:', safeKey);
     });
 
 
