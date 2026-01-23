@@ -21,6 +21,79 @@ class GameScene extends Phaser.Scene {
 
     // Debug logging throttle
     this._lastClassLog = 0;
+
+    // Interpolation settings
+    this.lerpFactor = 0.2; // Smoothing factor (0-1, lower = smoother but laggier)
+    this.snapThreshold = 150; // Distance threshold to snap instead of lerp
+
+    // Server update tracking for extrapolation
+    this.lastServerUpdate = Date.now();
+    this.serverTickRate = 50; // Expected ms between server updates (20 ticks/sec)
+  }
+
+  /**
+   * Linear interpolation helper
+   */
+  _lerp(current, target, factor) {
+    return current + (target - current) * factor;
+  }
+
+  /**
+   * Angle interpolation (handles wrap-around)
+   */
+  _lerpAngle(current, target, factor) {
+    let diff = target - current;
+    while (diff < -Math.PI) diff += Math.PI * 2;
+    while (diff > Math.PI) diff -= Math.PI * 2;
+    return current + diff * factor;
+  }
+
+  /**
+   * Interpolate all player sprites toward their server positions with velocity extrapolation
+   * @param {number} delta - Frame delta in ms
+   */
+  _interpolateSprites(delta) {
+    const players = gameState.getAllPlayerSprites();
+    const dt = delta / 1000; // Convert to seconds
+
+    Object.keys(players).forEach((id) => {
+      const sprite = players[id];
+      if (!sprite || sprite.serverX === undefined) return;
+
+      // Calculate time since last server update
+      const timeSinceUpdate = (Date.now() - (sprite.lastServerUpdate || Date.now())) / 1000;
+
+      // Extrapolate target position based on velocity
+      // This predicts where the ship SHOULD be now based on last known velocity
+      const extrapolatedX = sprite.serverX + (sprite.velocityX || 0) * timeSinceUpdate;
+      const extrapolatedY = sprite.serverY + (sprite.velocityY || 0) * timeSinceUpdate;
+
+      // Calculate distance to extrapolated position
+      const dx = extrapolatedX - sprite.x;
+      const dy = extrapolatedY - sprite.y;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+
+      if (distance > this.snapThreshold) {
+        // Snap if too far (spawn, teleport, reconnect)
+        sprite.x = sprite.serverX;
+        sprite.y = sprite.serverY;
+        sprite.rotation = sprite.serverRotation;
+      } else {
+        // Smooth interpolation toward extrapolated position
+        // Use frame-rate independent lerp factor
+        const frameLerp = 1 - Math.pow(1 - this.lerpFactor, dt * 60);
+        sprite.x = this._lerp(sprite.x, extrapolatedX, frameLerp);
+        sprite.y = this._lerp(sprite.y, extrapolatedY, frameLerp);
+        sprite.rotation = this._lerpAngle(sprite.rotation, sprite.serverRotation, frameLerp);
+      }
+
+      // Update name text to follow sprite
+      const nameText = gameState.getPlayerNameText(id);
+      if (nameText) {
+        nameText.x = sprite.x;
+        nameText.y = sprite.y - GameConfig.sprites.nameOffset;
+      }
+    });
   }
 
   /**
@@ -131,6 +204,9 @@ class GameScene extends Phaser.Scene {
 
     // Ensure camera is following (fallback for timing issues)
     this._ensureCameraFollow();
+
+    // Interpolate all player sprites smoothly
+    this._interpolateSprites(delta);
 
     // Send input to server
     if (networkManager.isConnected()) {
@@ -263,20 +339,25 @@ class GameScene extends Phaser.Scene {
 
           this._applyClassVisual(sprite, effectiveClassKey);
 
-          // Update position
-          sprite.x = serverP.x;
-          sprite.y = serverP.y;
-          sprite.rotation = serverP.rotation;
-
-          // Store velocity for debug
+          // Store server state for interpolation (actual smoothing happens in update loop)
+          sprite.serverX = serverP.x;
+          sprite.serverY = serverP.y;
+          sprite.serverRotation = serverP.rotation;
           sprite.velocityX = serverP.velocityX || 0;
           sprite.velocityY = serverP.velocityY || 0;
+          sprite.lastServerUpdate = Date.now();
+
+          // Initialize sprite position if this is first update
+          if (sprite.serverInitialized === undefined) {
+            sprite.x = serverP.x;
+            sprite.y = serverP.y;
+            sprite.rotation = serverP.rotation;
+            sprite.serverInitialized = true;
+          }
 
           // Update name text
           const nameText = gameState.getPlayerNameText(id);
           if (nameText) {
-            nameText.x = serverP.x;
-            nameText.y = serverP.y - GameConfig.sprites.nameOffset;
             if (serverP.playerName) nameText.setText(serverP.playerName);
           }
         }
