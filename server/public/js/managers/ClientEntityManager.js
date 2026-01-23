@@ -4,6 +4,9 @@
  * Handles ship creation, destruction, updates, and provides
  * methods for rendering and UI updates.
  */
+
+import ClientShip from '../entities/ClientShip.js';
+
 class ClientEntityManager {
   /**
    * Create a new ClientEntityManager
@@ -249,7 +252,9 @@ class ClientEntityManager {
   }
 }
 
-// Export for use in browser (attached to window) and potential module systems
+// Export for use in browser (attached to window) and ES6 modules
 if (typeof window !== 'undefined') {
   window.ClientEntityManager = ClientEntityManager;
 }
+
+export default ClientEntityManager;

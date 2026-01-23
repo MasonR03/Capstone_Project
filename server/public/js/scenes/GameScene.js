@@ -10,90 +10,23 @@ import gameState from '../managers/GameStateManager.js';
 import networkManager from '../managers/NetworkManager.js';
 import inputManager from '../managers/InputManager.js';
 import uiManager from '../managers/UIManager.js';
+import ClientEntityManager from '../managers/ClientEntityManager.js';
 
 class GameScene extends Phaser.Scene {
   constructor() {
     super({ key: 'GameScene' });
 
+    // Entity manager for ships
+    this.entityManager = null;
+
     // Local references
-    this.minimap = null;
     this.starSprites = [];
 
     // Debug logging throttle
     this._lastClassLog = 0;
 
-    // Interpolation settings
-    this.lerpFactor = 0.2; // Smoothing factor (0-1, lower = smoother but laggier)
-    this.snapThreshold = 150; // Distance threshold to snap instead of lerp
-
-    // Server update tracking for extrapolation
-    this.lastServerUpdate = Date.now();
-    this.serverTickRate = 50; // Expected ms between server updates (20 ticks/sec)
-  }
-
-  /**
-   * Linear interpolation helper
-   */
-  _lerp(current, target, factor) {
-    return current + (target - current) * factor;
-  }
-
-  /**
-   * Angle interpolation (handles wrap-around)
-   */
-  _lerpAngle(current, target, factor) {
-    let diff = target - current;
-    while (diff < -Math.PI) diff += Math.PI * 2;
-    while (diff > Math.PI) diff -= Math.PI * 2;
-    return current + diff * factor;
-  }
-
-  /**
-   * Interpolate all player sprites toward their server positions with velocity extrapolation
-   * @param {number} delta - Frame delta in ms
-   */
-  _interpolateSprites(delta) {
-    const players = gameState.getAllPlayerSprites();
-    const dt = delta / 1000; // Convert to seconds
-
-    Object.keys(players).forEach((id) => {
-      const sprite = players[id];
-      if (!sprite || sprite.serverX === undefined) return;
-
-      // Calculate time since last server update
-      const timeSinceUpdate = (Date.now() - (sprite.lastServerUpdate || Date.now())) / 1000;
-
-      // Extrapolate target position based on velocity
-      // This predicts where the ship SHOULD be now based on last known velocity
-      const extrapolatedX = sprite.serverX + (sprite.velocityX || 0) * timeSinceUpdate;
-      const extrapolatedY = sprite.serverY + (sprite.velocityY || 0) * timeSinceUpdate;
-
-      // Calculate distance to extrapolated position
-      const dx = extrapolatedX - sprite.x;
-      const dy = extrapolatedY - sprite.y;
-      const distance = Math.sqrt(dx * dx + dy * dy);
-
-      if (distance > this.snapThreshold) {
-        // Snap if too far (spawn, teleport, reconnect)
-        sprite.x = sprite.serverX;
-        sprite.y = sprite.serverY;
-        sprite.rotation = sprite.serverRotation;
-      } else {
-        // Smooth interpolation toward extrapolated position
-        // Use frame-rate independent lerp factor
-        const frameLerp = 1 - Math.pow(1 - this.lerpFactor, dt * 60);
-        sprite.x = this._lerp(sprite.x, extrapolatedX, frameLerp);
-        sprite.y = this._lerp(sprite.y, extrapolatedY, frameLerp);
-        sprite.rotation = this._lerpAngle(sprite.rotation, sprite.serverRotation, frameLerp);
-      }
-
-      // Update name text to follow sprite
-      const nameText = gameState.getPlayerNameText(id);
-      if (nameText) {
-        nameText.x = sprite.x;
-        nameText.y = sprite.y - GameConfig.sprites.nameOffset;
-      }
-    });
+    // Camera follow flag
+    this._cameraFollowSet = false;
   }
 
   /**
@@ -138,6 +71,9 @@ class GameScene extends Phaser.Scene {
     this.cameras.main.centerOn(WORLD_W / 2, WORLD_H / 2);
     this.cameras.main.setZoom(GameConfig.camera.initialZoom);
 
+    // Initialize entity manager
+    this.entityManager = new ClientEntityManager(this);
+
     // Initialize input manager
     inputManager.init(this);
 
@@ -164,13 +100,6 @@ class GameScene extends Phaser.Scene {
       // Enable input now that class is chosen
       inputManager.enable();
 
-      // Apply visual immediately to local player sprite (if it exists)
-      const socketId = gameState.getSocketId();
-      const mySprite = gameState.getPlayerSprite(socketId);
-      if (mySprite) {
-        this._applyClassVisual(mySprite, classKey);
-      }
-
       // Send to server if connected
       if (networkManager.isConnected()) {
         networkManager.emitChooseClass(classKey);
@@ -186,7 +115,6 @@ class GameScene extends Phaser.Scene {
     this._setupStateSubscriptions();
 
     // Request current players (in case we missed the initial event)
-    // The server sends currentPlayers when setPlayerName is emitted
     if (networkManager.isConnected()) {
       const myId = gameState.getMyId();
       if (myId) {
@@ -202,25 +130,33 @@ class GameScene extends Phaser.Scene {
     // Don't process until class is chosen
     if (!gameState.isClassChosen()) return;
 
+    const dt = delta / 1000; // Convert to seconds
+
     // Ensure camera is following (fallback for timing issues)
     this._ensureCameraFollow();
 
-    // Interpolate all player sprites smoothly
-    this._interpolateSprites(delta);
+    // Get current input
+    const input = inputManager.getCurrentInput();
+
+    // Apply prediction for local player (smooth movement)
+    if (this.entityManager) {
+      this.entityManager.applyLocalPrediction(input, dt);
+      // Interpolate remote players
+      this.entityManager.updateAll();
+    }
 
     // Send input to server
     if (networkManager.isConnected()) {
-      const input = inputManager.getCurrentInput();
       networkManager.emitPlayerInput(input);
     }
 
     // Update minimap
     const socketId = gameState.getSocketId();
-    const players = gameState.getAllPlayerSprites();
+    const minimapData = this.entityManager ? this.entityManager.getMinimapData() : {};
     const stars = (this.starSprites || []).map((s, i) => ({ id: i, x: s.x, y: s.y }));
 
     uiManager.updateMinimap({
-      players,
+      players: minimapData,
       myId: socketId,
       stars
     });
@@ -298,8 +234,11 @@ class GameScene extends Phaser.Scene {
     socket.on('currentPlayers', (players) => {
       console.log('currentPlayers:', Object.keys(players).length);
 
+      const socketId = gameState.getSocketId();
+      this.entityManager.setLocalPlayer(socketId);
+
       Object.keys(players).forEach((id) => {
-        this._addOrUpdatePlayerSprite(players[id]);
+        this.entityManager.addOrUpdateShip(players[id]);
       });
 
       this._ensureCameraFollow();
@@ -307,75 +246,41 @@ class GameScene extends Phaser.Scene {
 
     // New player joined
     socket.on('newPlayer', (playerInfo) => {
-      this._addOrUpdatePlayerSprite(playerInfo);
+      this.entityManager.addOrUpdateShip(playerInfo);
     });
 
     // Player disconnected
     socket.on('playerDisconnected', (playerId) => {
-      gameState.removePlayer(playerId);
+      this.entityManager.removeShip(playerId);
     });
 
     // Player updates (game tick)
     socket.on('playerUpdates', (data) => {
-      const serverPlayers = data.players || data;
+      const serverPlayers = data.players;
+      const socketId = gameState.getSocketId();
 
-      Object.keys(serverPlayers).forEach((id) => {
-        const serverP = serverPlayers[id];
+      // Ensure local player is set
+      if (socketId && !this.entityManager.localPlayerId) {
+        this.entityManager.setLocalPlayer(socketId);
+      }
 
-        // Create sprite if doesn't exist
-        if (!gameState.getPlayerSprite(id)) {
-          this._addOrUpdatePlayerSprite(serverP);
-        }
-
-        const sprite = gameState.getPlayerSprite(id);
-        if (sprite) {
-          // Determine class
-          const socketId = gameState.getSocketId();
-          const chosenClassKey = gameState.getChosenClassKey();
-          const effectiveClassKey =
-            (serverP && GameConfig.shipClasses[serverP.classKey] ? serverP.classKey : null) ||
-            (id === socketId ? chosenClassKey : null) ||
-            GameConfig.defaultClass;
-
-          this._applyClassVisual(sprite, effectiveClassKey);
-
-          // Store server state for interpolation (actual smoothing happens in update loop)
-          sprite.serverX = serverP.x;
-          sprite.serverY = serverP.y;
-          sprite.serverRotation = serverP.rotation;
-          sprite.velocityX = serverP.velocityX || 0;
-          sprite.velocityY = serverP.velocityY || 0;
-          sprite.lastServerUpdate = Date.now();
-
-          // Initialize sprite position if this is first update
-          if (sprite.serverInitialized === undefined) {
-            sprite.x = serverP.x;
-            sprite.y = serverP.y;
-            sprite.rotation = serverP.rotation;
-            sprite.serverInitialized = true;
-          }
-
-          // Update name text
-          const nameText = gameState.getPlayerNameText(id);
-          if (nameText) {
-            if (serverP.playerName) nameText.setText(serverP.playerName);
-          }
-        }
-
-        // Update local player stats
-        if (id === gameState.getSocketId()) {
+      // Process updates through entity manager
+      this.entityManager.processServerUpdate(serverPlayers, {
+        onLocalPlayerUpdate: (serverState) => {
+          // Update local player stats for HUD
           gameState.updateLocalPlayerStats({
-            hp: serverP.hp,
-            maxHp: serverP.maxHp,
-            xp: serverP.xp,
-            maxXp: serverP.maxXp
+            hp: serverState.hp,
+            maxHp: serverState.maxHp,
+            xp: serverState.xp,
+            maxXp: serverState.maxXp
           });
 
           uiManager.updateHpXp(gameState.getLocalPlayerStats());
 
           // Throttled debug logging
+          const chosenClassKey = gameState.getChosenClassKey();
           if (!this._lastClassLog || Date.now() - this._lastClassLog > 1500) {
-            console.log('👀 server classKey:', serverP.classKey, '| local chosen:', chosenClassKey);
+            console.log('server classKey:', serverState.classKey, '| local chosen:', chosenClassKey);
             this._lastClassLog = Date.now();
           }
         }
@@ -408,103 +313,18 @@ class GameScene extends Phaser.Scene {
   }
 
   /**
-   * Add or update a player sprite
-   * @private
-   */
-  _addOrUpdatePlayerSprite(playerInfo) {
-    const playerId = playerInfo.playerId;
-    let sprite = gameState.getPlayerSprite(playerId);
-
-    const socketId = gameState.getSocketId();
-    const chosenClassKey = gameState.getChosenClassKey();
-
-    const initialClass =
-      (GameConfig.shipClasses[playerInfo.classKey] ? playerInfo.classKey : null) ||
-      (playerId === socketId ? chosenClassKey : null) ||
-      GameConfig.defaultClass;
-
-    const cfg = GameConfig.shipClasses[initialClass] || GameConfig.shipClasses[GameConfig.defaultClass];
-
-    if (!sprite) {
-      console.log('Creating sprite for:', playerInfo.playerName || playerId, 'class:', initialClass);
-
-      sprite = this.add.sprite(playerInfo.x, playerInfo.y, cfg.spriteKey);
-      sprite._classKey = initialClass;
-      sprite.setOrigin(0.5, 0.5);
-      sprite.setDisplaySize(GameConfig.sprites.ship.width, GameConfig.sprites.ship.height);
-
-      // Team tint
-      if (playerInfo.team === 'red') sprite.setTint(0xff4444);
-      else if (playerInfo.team === 'blue') sprite.setTint(0x4444ff);
-
-      sprite.setDepth(1);
-      sprite.setVisible(true);
-      sprite.setActive(true);
-
-      gameState.setPlayerSprite(playerId, sprite);
-
-      // Store player name
-      if (playerInfo.playerName) {
-        gameState.setPlayerName(playerId, playerInfo.playerName);
-      }
-
-      // Create name text
-      const nameText = this.add.text(
-        playerInfo.x,
-        playerInfo.y - GameConfig.sprites.nameOffset,
-        playerInfo.playerName || playerId,
-        {
-          font: '16px Orbitron, sans-serif',
-          fill: '#00ffff',
-          align: 'center',
-          stroke: '#000000',
-          strokeThickness: 2
-        }
-      );
-      nameText.setOrigin(0.5, 0.5);
-      nameText.setDepth(2);
-      gameState.setPlayerNameText(playerId, nameText);
-    }
-
-    return sprite;
-  }
-
-  /**
-   * Apply class visual to sprite
-   * @private
-   */
-  _applyClassVisual(sprite, classKey) {
-    const key = GameConfig.shipClasses[classKey] ? classKey : GameConfig.defaultClass;
-    const cfg = GameConfig.shipClasses[key] || GameConfig.shipClasses[GameConfig.defaultClass];
-
-    if (sprite._classKey !== key) {
-      sprite.setTexture(cfg.spriteKey);
-      sprite.setDisplaySize(GameConfig.sprites.ship.width, GameConfig.sprites.ship.height);
-      sprite._classKey = key;
-    }
-  }
-
-  /**
    * Ensure camera follows local player
    * @private
    */
   _ensureCameraFollow() {
-    if (gameState.isCameraFollowSet()) return;
+    if (this._cameraFollowSet) return;
     if (!this.cameras || !this.cameras.main) return;
+    if (!this.entityManager) return;
 
-    const socketId = gameState.getSocketId();
-    if (!socketId) return;
-
-    const mySprite = gameState.getPlayerSprite(socketId);
-    if (mySprite) {
-      this.cameras.main.startFollow(
-        mySprite,
-        true,
-        GameConfig.camera.followLerpX,
-        GameConfig.camera.followLerpY
-      );
-      gameState.setCameraFollowSet(true);
-      console.log('📷 Camera now following my sprite:', socketId);
+    const success = this.entityManager.setCameraToLocalPlayer(this.cameras.main);
+    if (success) {
+      this._cameraFollowSet = true;
+      console.log('Camera now following local player');
     }
   }
 }

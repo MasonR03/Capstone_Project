@@ -131,27 +131,7 @@ const GameConfig = {
   }
 };
 
-// Freeze to prevent accidental modification
-Object.freeze(GameConfig);
-Object.freeze(GameConfig.world);
-Object.freeze(GameConfig.phaser);
-Object.freeze(GameConfig.shipClasses);
-Object.freeze(GameConfig.shipClasses.hunter);
-Object.freeze(GameConfig.shipClasses.tanker);
-Object.freeze(GameConfig.shipPhysics);
-Object.freeze(GameConfig.movement);
-Object.freeze(GameConfig.camera);
-Object.freeze(GameConfig.minimap);
-Object.freeze(GameConfig.minimap.colors);
-Object.freeze(GameConfig.hud);
-Object.freeze(GameConfig.hud.hp);
-Object.freeze(GameConfig.hud.xp);
-Object.freeze(GameConfig.network);
-Object.freeze(GameConfig.stars);
-Object.freeze(GameConfig.sprites);
-Object.freeze(GameConfig.sprites.ship);
-Object.freeze(GameConfig.assets);
-Object.freeze(GameConfig.assets.ships);
+// Note: Not freezing GameConfig because Phaser needs to mutate physics config during initialization
 
 // Export for ES6 modules and browser global
 if (typeof window !== 'undefined') {

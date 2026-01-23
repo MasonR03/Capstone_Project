@@ -4,6 +4,9 @@
  * Wraps a Phaser sprite with interpolation, prediction, and visual management.
  * Mirrors the server's Ship class structure for consistency.
  */
+
+import GameConfig from '../config/GameConfig.js';
+
 class ClientShip {
   /**
    * Create a new client ship
@@ -45,18 +48,21 @@ class ClientShip {
     };
     this.predictionInitialized = false;
 
-    // Physics constants (must match server)
+    // Physics constants from config (must match server)
+    const classKey = serverState.classKey || GameConfig.defaultClass;
+    const classConfig = GameConfig.shipClasses[classKey] || GameConfig.shipClasses[GameConfig.defaultClass];
+    this.classKey = classKey;
     this.stats = {
-      maxSpeed: 400,
-      acceleration: 200,
+      maxSpeed: classConfig.stats.speed || 400,
+      acceleration: classConfig.stats.accel || 200,
       angularSpeed: 300 * (Math.PI / 180), // 5.236 rad/s
       dragFactor: 0.98
     };
 
-    // World bounds
-    this.worldWidth = 2000;
-    this.worldHeight = 2000;
-    this.borderBuffer = 20;
+    // World bounds from config
+    this.worldWidth = GameConfig.world.width;
+    this.worldHeight = GameConfig.world.height;
+    this.borderBuffer = GameConfig.world.borderBuffer;
 
     // Create visual elements
     this.sprite = null;
@@ -71,16 +77,24 @@ class ClientShip {
   _createSprite(serverState) {
     const scene = this.scene;
 
+    // Get sprite key from config
+    const classConfig = GameConfig.shipClasses[this.classKey] || GameConfig.shipClasses[GameConfig.defaultClass];
+    const spriteKey = classConfig.spriteKey;
+
     // Create ship sprite
-    if (scene.textures.exists('ship')) {
-      this.sprite = scene.add.sprite(this.x, this.y, 'ship');
-      this.sprite.setDisplaySize(53, 40);
+    if (scene.textures.exists(spriteKey)) {
+      this.sprite = scene.add.sprite(this.x, this.y, spriteKey);
     } else {
-      // Fallback rectangle if texture not found
-      console.warn('Ship texture not found, using fallback rectangle');
-      this.sprite = scene.add.rectangle(this.x, this.y, 53, 40, 0x888888);
+      // Fallback to default sprite or rectangle
+      console.warn(`Ship texture '${spriteKey}' not found, using fallback`);
+      if (scene.textures.exists('ship_hunter')) {
+        this.sprite = scene.add.sprite(this.x, this.y, 'ship_hunter');
+      } else {
+        this.sprite = scene.add.rectangle(this.x, this.y, 53, 40, 0x888888);
+      }
     }
 
+    this.sprite.setDisplaySize(GameConfig.sprites.ship.width, GameConfig.sprites.ship.height);
     this.sprite.setOrigin(0.5, 0.5);
     this.sprite.setVisible(true);
     this.sprite.setDepth(1);
@@ -92,7 +106,7 @@ class ClientShip {
 
     // Create name label
     const displayName = this.playerName || this.id.substring(0, 8);
-    this.nameText = scene.add.text(this.x, this.y - 70, displayName, {
+    this.nameText = scene.add.text(this.x, this.y - GameConfig.sprites.nameOffset, displayName, {
       font: '16px Orbitron, sans-serif',
       fill: '#00ffff',
       align: 'center',
@@ -294,7 +308,7 @@ class ClientShip {
     }
     if (this.nameText) {
       this.nameText.x = x;
-      this.nameText.y = y - 70;
+      this.nameText.y = y - GameConfig.sprites.nameOffset;
     }
   }
 
@@ -360,7 +374,9 @@ class ClientShip {
   }
 }
 
-// Export for use in browser (attached to window) and potential module systems
+// Export for use in browser (attached to window) and ES6 modules
 if (typeof window !== 'undefined') {
   window.ClientShip = ClientShip;
 }
+
+export default ClientShip;

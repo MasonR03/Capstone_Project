@@ -49,19 +49,31 @@ class UIManager {
     }
 
     // Create HUD
-    this.hud = new HUD(scene);
+    if (typeof HUD === 'function') {
+      this.hud = new HUD(scene);
+    } else {
+      console.error('UIManager: HUD is not a constructor');
+    }
 
     // Create Minimap
-    this.minimap = new Minimap(scene, {
-      worldW: this.worldConfig.width,
-      worldH: this.worldConfig.height,
-      size: GameConfig.minimap.size,
-      radius: GameConfig.minimap.radius,
-      margin: GameConfig.minimap.margin
-    });
+    if (typeof Minimap === 'function') {
+      this.minimap = new Minimap(scene, {
+        worldW: this.worldConfig.width,
+        worldH: this.worldConfig.height,
+        size: GameConfig.minimap.size,
+        radius: GameConfig.minimap.radius,
+        margin: GameConfig.minimap.margin
+      });
+    } else {
+      console.error('UIManager: Minimap is not a constructor');
+    }
 
     // Create Level Panel
-    this.levelPanel = new LevelPanel(scene);
+    if (typeof LevelPanel === 'function') {
+      this.levelPanel = new LevelPanel(scene);
+    } else {
+      console.error('UIManager: LevelPanel is not a constructor');
+    }
 
     // Initialize debug tools
     debugTools.init(game, () => this._getDebugPlayerInfo());
@@ -83,7 +95,9 @@ class UIManager {
 
     this.classPicker = new ClassPicker(this.scene, (classKey) => {
       this.classPicker = null;
-      if (onPick) onPick(classKey);
+      if (typeof onPick === 'function') {
+        onPick(classKey);
+      }
     });
 
     return this.classPicker;
