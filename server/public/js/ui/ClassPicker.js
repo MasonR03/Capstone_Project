@@ -81,19 +81,21 @@ class ClassPicker {
     this.overlay.add(dim);
 
     // Title
-    const title = this.scene.add.text(cam.width / 2, 80, 'Choose Your Ship', {
-      fontSize: '26px',
-      fill: '#ffffff',
-      fontFamily: 'monospace'
+    const title = this.scene.add.text(cam.width / 2, 46, 'Choose Your Ship', {
+      fontSize: '28px',
+      fill: '#e9fbff',
+      fontFamily: 'Orbitron, monospace',
+      stroke: '#0b2230',
+      strokeThickness: 4
     }).setOrigin(0.5, 0.5);
     this.overlay.add(title);
 
     // Controls hint
     const hint = this.scene.add.text(
       cam.width / 2,
-      112,
+      104,
       '↑/W up   ↓/S down   ENTER pick   ESC cancel',
-      { fontSize: '14px', fill: '#cccccc', fontFamily: 'monospace' }
+      { fontSize: '13px', fill: '#9dd9e6', fontFamily: 'Orbitron, monospace' }
     ).setOrigin(0.5, 0.5);
     this.overlay.add(hint);
 
@@ -113,7 +115,7 @@ class ClassPicker {
    * @private
    */
   _buildRows(cam) {
-    const startY = 180;
+    const startY = 190;
 
     const config = this.config || getConfig();
     const shipWidth = (config.sprites && config.sprites.ship && config.sprites.ship.width) || 53;
@@ -129,37 +131,42 @@ class ClassPicker {
       this.overlay.add(row);
 
       // Selection box
-      const box = this.scene.add.rectangle(0, 0, 520, 120, 0x111111, 0.95)
-        .setStrokeStyle(2, 0xffffff, 0.35);
+      const box = this.scene.add.rectangle(0, 0, 560, 130, 0x0b141b, 0.95)
+        .setStrokeStyle(2, 0x1fb6d1, 0.35);
       row.add(box);
 
+      // Soft glow border (subtle)
+      const glow = this.scene.add.rectangle(0, 0, 570, 140, 0x00c8ff, 0.08)
+        .setStrokeStyle(2, 0x00c8ff, 0.18);
+      row.add(glow);
+
       // Ship image
-      const shipImg = this.scene.add.image(-200, 0, classCfg.spriteKey);
+      const shipImg = this.scene.add.image(-200, 6, classCfg.spriteKey);
       shipImg.setDisplaySize(shipWidth * shipScale, shipHeight * shipScale);
       row.add(shipImg);
 
       // Ship name
-      const nameText = this.scene.add.text(-130, -26, classCfg.name, {
-        fontSize: '20px',
-        fill: '#ffffff',
-        fontFamily: 'monospace'
-      });
+      const nameText = this.scene.add.text(shipImg.x + 120, shipImg.y - 22, classCfg.name, {
+        fontSize: '18px',
+        fill: '#e9fbff',
+        fontFamily: 'Orbitron, monospace'
+      }).setOrigin(0.5, 0.5);
       row.add(nameText);
 
       // Stats
       const st = classCfg.stats;
-      const statsText = this.scene.add.text(-130, 6, `HP ${st.maxHp}   SPD ${st.speed}   ACC ${st.accel}`, {
+      const statsText = this.scene.add.text(40, -10, `HP ${st.maxHp}   SPD ${st.speed}   ACC ${st.accel}`, {
         fontSize: '14px',
-        fill: '#cccccc',
-        fontFamily: 'monospace'
+        fill: '#b8d7e2',
+        fontFamily: 'Orbitron, monospace'
       });
       row.add(statsText);
 
       // Selection tag
-      const tag = this.scene.add.text(190, 34, '', {
-        fontSize: '14px',
+      const tag = this.scene.add.text(235, 0, '', {
+        fontSize: '13px',
         fill: '#00ffcc',
-        fontFamily: 'monospace'
+        fontFamily: 'Orbitron, monospace'
       }).setOrigin(0.5, 0.5);
       row.add(tag);
 
