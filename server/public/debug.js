@@ -1,6 +1,17 @@
-// Debug Tools Module
-const DebugTools = (() => {
-  // Private state
+/**
+ * Debug Tools - Backward compatibility wrapper
+ *
+ * This file provides backward compatibility by loading the ES6 DebugTools class
+ * and exposing it in the original IIFE format.
+ */
+
+// Load the new DebugTools class
+// For non-module environments, the class is loaded via separate script tag
+// and exposed on window.DebugTools
+
+// If the new class isn't loaded yet, define a compatible interface
+if (typeof window.DebugTools === 'undefined') {
+  // Private state (matches original IIFE)
   let debugPanelVisible = false;
   let positionUpdateInterval = null;
   let gameInstance = null;
@@ -20,44 +31,34 @@ const DebugTools = (() => {
 
   // Initialize debug tools
   function init(game, getPlayer, gridGraphics) {
-    // Store references
     gameInstance = game;
     getPlayerCallback = getPlayer;
     debugGridGraphics = gridGraphics;
 
-    // Show debug tools on all clients (removed local restriction)
     const debugButton = document.getElementById('debug-button');
     const debugPanel = document.getElementById('debug-panel');
 
-    // Show the debug button
+    if (!debugButton || !debugPanel) {
+      console.warn('DebugTools: Required DOM elements not found');
+      return;
+    }
+
     debugButton.style.display = 'block';
 
-    // Check localStorage for saved debug panel state
     const savedDebugState = localStorage.getItem('debugPanelVisible');
     if (savedDebugState === 'true') {
       debugPanelVisible = true;
       debugPanel.style.display = 'block';
-
-      // Enable gridlines if they were visible
-      if (debugGridGraphics) {
-        debugGridGraphics.setVisible(true);
-      }
-
+      if (debugGridGraphics) debugGridGraphics.setVisible(true);
       startPositionUpdates();
     }
 
-    // Toggle debug panel on button click
     debugButton.addEventListener('click', () => {
       debugPanelVisible = !debugPanelVisible;
       debugPanel.style.display = debugPanelVisible ? 'block' : 'none';
-
-      // Save state to localStorage
       localStorage.setItem('debugPanelVisible', debugPanelVisible.toString());
 
-      // Toggle gridlines visibility
-      if (debugGridGraphics) {
-        debugGridGraphics.setVisible(debugPanelVisible);
-      }
+      if (debugGridGraphics) debugGridGraphics.setVisible(debugPanelVisible);
 
       if (debugPanelVisible) {
         startPositionUpdates();
@@ -66,14 +67,10 @@ const DebugTools = (() => {
       }
     });
 
-    // Prevent spacebar from triggering the button
     debugButton.addEventListener('keydown', (e) => {
-      if (e.code === 'Space') {
-        e.preventDefault();
-      }
+      if (e.code === 'Space') e.preventDefault();
     });
 
-    // Also prevent spacebar at document level from focusing the button
     document.addEventListener('keydown', (e) => {
       if (e.code === 'Space' && document.activeElement === debugButton) {
         e.preventDefault();
@@ -82,20 +79,11 @@ const DebugTools = (() => {
     });
   }
 
-  // Start position update timer
   function startPositionUpdates() {
-    // Clear any existing interval
-    if (positionUpdateInterval) {
-      clearInterval(positionUpdateInterval);
-    }
-
-    // Update position at 20Hz (50ms intervals)
-    positionUpdateInterval = setInterval(() => {
-      updatePlayerPosition();
-    }, 50); // 1000ms / 20Hz = 50ms
+    if (positionUpdateInterval) clearInterval(positionUpdateInterval);
+    positionUpdateInterval = setInterval(() => updatePlayerPosition(), 50);
   }
 
-  // Stop position update timer
   function stopPositionUpdates() {
     if (positionUpdateInterval) {
       clearInterval(positionUpdateInterval);
@@ -103,7 +91,6 @@ const DebugTools = (() => {
     }
   }
 
-  // Update player position display
   function updatePlayerPosition() {
     const posXElement = document.getElementById('pos-x');
     const posYElement = document.getElementById('pos-y');
@@ -115,10 +102,8 @@ const DebugTools = (() => {
     const playerNamesSection = document.getElementById('player-names-section');
     const playerNamesList = document.getElementById('player-names-list');
 
-    // Get the active scene
     const scene = gameInstance?.scene?.scenes?.[0];
 
-    // Update camera position if scene exists
     if (scene && scene.cameras && scene.cameras.main) {
       const camera = scene.cameras.main;
       camXElement.textContent = Math.round(camera.scrollX);
@@ -128,22 +113,19 @@ const DebugTools = (() => {
       camYElement.textContent = '-';
     }
 
-    // Get player from callback
     const playerInfo = getPlayerCallback ? getPlayerCallback() : null;
 
-    // Update player count and names
     if (playerInfo && playerInfo.allPlayers) {
       const allPlayers = playerInfo.allPlayers;
       const playerCount = Object.keys(allPlayers).length;
       playerCountElement.textContent = playerCount;
 
-      // Display player names if available
       if (playerInfo.playerNames && playerCount > 0) {
         const playerNames = playerInfo.playerNames;
         const namesList = Object.entries(playerNames)
           .map(([id, name]) => `• ${name}`)
           .join('<br>');
-        
+
         if (namesList) {
           playerNamesList.innerHTML = namesList;
           playerNamesSection.style.display = 'block';
@@ -161,7 +143,6 @@ const DebugTools = (() => {
     if (playerInfo && playerInfo.player) {
       const player = playerInfo.player;
 
-      // Use predicted position/velocity for ClientShip (local player)
       if (player.predicted) {
         posXElement.textContent = Math.round(player.predicted.x);
         posYElement.textContent = Math.round(player.predicted.y);
@@ -170,7 +151,6 @@ const DebugTools = (() => {
         const speed = Math.round(Math.sqrt(velX * velX + velY * velY));
         velocityElement.textContent = speed;
       } else if (player.body) {
-        // Fallback for Phaser physics body
         posXElement.textContent = Math.round(player.x);
         posYElement.textContent = Math.round(player.y);
         const velX = player.body.velocity.x;
@@ -178,7 +158,6 @@ const DebugTools = (() => {
         const speed = Math.round(Math.sqrt(velX * velX + velY * velY));
         velocityElement.textContent = speed;
       } else if (player.velocityX !== undefined || player.velocityY !== undefined) {
-        // Use server-provided velocity stored on sprite
         posXElement.textContent = Math.round(player.x);
         posYElement.textContent = Math.round(player.y);
         const velX = player.velocityX || 0;
@@ -196,7 +175,6 @@ const DebugTools = (() => {
       velocityElement.textContent = '-';
     }
 
-    // Update ping display
     if (window.getCurrentPing) {
       pingElement.textContent = window.getCurrentPing();
     } else {
@@ -204,9 +182,5 @@ const DebugTools = (() => {
     }
   }
 
-  // Public API
-  return {
-    init,
-    isRunningLocally
-  };
-})();
+  window.DebugTools = { init, isRunningLocally };
+}

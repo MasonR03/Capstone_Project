@@ -20,15 +20,16 @@ document.addEventListener('DOMContentLoaded', function() {
       return;
     }
 
-    // Store the player name globally
+    // Store the player name globally (both local and window for module compatibility)
     playerName = name;
+    window.playerName = name;
 
     console.log('👤 Player logged in as:', playerName);
 
     // Hide the login overlay
     loginOverlay.classList.add('hidden');
 
-    // Notify that login is complete (for clientGame.js to pick up)
+    // Notify that login is complete
     window.loginComplete = true;
   });
 

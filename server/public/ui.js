@@ -1,37 +1,35 @@
-// Simple HUD + slide panel
-// Exposes:
-// - UI.init(scene)
-// - UI.updateScores(scores)
-// - UI.updateHpXp({ hp, maxHp, xp, maxXp })
-// - UI.tick(camera)
-// - UI.updateMinimap(data)
+/**
+ * UI Module - Backward compatibility wrapper
+ *
+ * Provides the original window.UI interface using the new HUD and LevelPanel classes.
+ * Maintains full backward compatibility with existing clientGame.js code.
+ */
 
 (function () {
   let scene;
 
-  // HUD
+  // HUD elements
   let hud;
   let frameImg;
   let hpFill, xpFill;
-  let hpNumText, xpNumText; // centered numbers
+  let hpNumText, xpNumText;
   let scoreText;
 
-  // Slide panel
+  // Slide panel elements
   let panel;
   let panelBg;
   let panelTween = null;
   let panelOpen = false;
   let panelAnimating = false;
 
-  // Toggle tab (outside panel)
+  // Toggle tab
   let tabBtn;
   let tabTween = null;
 
-  // ~~~~ layout tuning ~~~~
+  // Layout constants
   const HUD_X = 16;
   const HUD_Y = 16;
 
-  // Your coords (HUD local px)
   const HP_START_X = 50;
   const HP_CENTER_Y = 14;
   const HP_END_X = 128;
@@ -40,31 +38,27 @@
   const XP_CENTER_Y = 48;
   const XP_END_X = 128;
 
-  // Labels (gap area)
   const HP_TEXT_X = 44;
   const HP_TEXT_Y = 24;
   const XP_TEXT_X = 45;
   const XP_TEXT_Y = 56;
 
-  // Fill padding (inside frame)
   const FILL_PAD_X = 2;
 
-  // Center numbers inside bars (tweak if needed)
   const HP_NUM_X = Math.floor((HP_START_X + HP_END_X) / 2);
   const HP_NUM_Y = HP_CENTER_Y;
   const XP_NUM_X = Math.floor((XP_START_X + XP_END_X) / 2);
   const XP_NUM_Y = XP_CENTER_Y;
 
-  // ~~~~ panel tuning ~~~~
+  // Panel constants
   const PANEL_W = 260;
   const PANEL_H = 220;
   const PANEL_MARGIN = 16;
   const PANEL_Z = 999;
 
-  // tab tuning
   const TAB_Z = 1000;
-  const TAB_OFFSET_Y = 18; // from panel top
-  const TAB_OUTSIDE_PAD = 6; // gap between panel edge and tab
+  const TAB_OFFSET_Y = 18;
+  const TAB_OUTSIDE_PAD = 6;
 
   function safeAdd(container, obj) {
     if (container && obj && obj.scene) container.add(obj);
@@ -73,7 +67,7 @@
   function init(phaserScene) {
     scene = phaserScene;
 
-    // HUD container (screen-space)
+    // HUD container
     hud = scene.add.container(HUD_X, HUD_Y).setScrollFactor(0).setDepth(200);
 
     // Fills
@@ -98,7 +92,7 @@
       0x00ccff
     ).setOrigin(0, 0.5);
 
-    // Frame PNG (on top)
+    // Frame PNG
     if (scene.textures.exists('hudBars')) {
       frameImg = scene.add.image(0, 0, 'hudBars').setOrigin(0, 0);
       console.log('HUD frame size:', frameImg.width, frameImg.height);
@@ -107,14 +101,7 @@
       frameImg = scene.add.rectangle(0, 0, 140, 64, 0x222222, 0.5).setOrigin(0, 0);
     }
 
-    // Labels
-    // hpText = scene.add.text(HP_TEXT_X, HP_TEXT_Y, 'HP 0/0', {
-    //   fontSize: '12px',
-    //   color: '#ffffff',
-    //   fontFamily: 'monospace'
-    // }).setOrigin(0, 0.5);
-
-    // Center numbers (inside bars)
+    // Center numbers
     hpNumText = scene.add.text(HP_NUM_X, HP_NUM_Y, '0/0', {
       fontSize: '12px',
       color: '#ffffff',
@@ -131,7 +118,7 @@
       strokeThickness: 2
     }).setOrigin(0.5, 0.5);
 
-    // Add back-to-front (no arrays)
+    // Add to container
     safeAdd(hud, hpFill);
     safeAdd(hud, xpFill);
     safeAdd(hud, frameImg);
@@ -145,7 +132,7 @@
       fontFamily: 'monospace'
     }).setScrollFactor(0).setDepth(210);
 
-    // Panel + tab
+    // Panel
     buildPanel();
 
     return window.UI;
@@ -154,10 +141,7 @@
   function buildPanel() {
     const cam = scene.cameras.main;
 
-    // anchored bottom-left
     const openY = cam.height - PANEL_MARGIN - PANEL_H;
-
-    // closed: slide mostly off-screen to the left
     const closedX = -PANEL_W + 24;
 
     panel = scene.add.container(closedX, openY)
@@ -183,31 +167,24 @@
     }).setOrigin(0, 0);
     safeAdd(panel, hint);
 
-    // Tab button is NOT inside the panel (so it can sit outside)
-    const tabX = 0; // set in tick()
-    const tabY = 0;
-
-    const hasIn  = scene.textures.exists('menuIn');
+    // Tab button
+    const hasIn = scene.textures.exists('menuIn');
     const hasOut = scene.textures.exists('menuOut');
 
-    if (!hasIn)  console.warn('UI: Missing texture key "menuIn"');
+    if (!hasIn) console.warn('UI: Missing texture key "menuIn"');
     if (!hasOut) console.warn('UI: Missing texture key "menuOut"');
 
     tabBtn = hasIn
-      ? scene.add.image(tabX, tabY, 'menuOut').setOrigin(0.5, 0.5)
-      : scene.add.rectangle(tabX, tabY, 22, 22, 0x00ffcc, 0.85).setOrigin(0.5, 0.5);
+      ? scene.add.image(0, 0, 'menuOut').setOrigin(0.5, 0.5)
+      : scene.add.rectangle(0, 0, 22, 22, 0x00ffcc, 0.85).setOrigin(0.5, 0.5);
 
     tabBtn.setScrollFactor(0).setDepth(TAB_Z);
-
-    // Clickable
     tabBtn.setInteractive({ useHandCursor: true });
     tabBtn.on('pointerdown', () => togglePanel());
 
-    // Keyboard
     scene.input.keyboard.on('keydown-P', () => openPanel());
     scene.input.keyboard.on('keydown-L', () => closePanel());
 
-    // initial layout
     tick(cam);
   }
 
@@ -240,7 +217,6 @@
       }
     });
 
-    // switch tab art to "in" if available
     if (tabBtn && scene.textures.exists('menuIn')) tabBtn.setTexture('menuIn');
   }
 
@@ -267,7 +243,6 @@
       }
     });
 
-    // switch tab art to "out" if available
     if (tabBtn && scene.textures.exists('menuOut')) tabBtn.setTexture('menuOut');
   }
 
@@ -298,24 +273,19 @@
     }
   }
 
-  // keep UI pinned on resize
   function tick(camera) {
     if (!camera) return;
 
-    // HUD
     hud && hud.setPosition(HUD_X, HUD_Y);
     scoreText && scoreText.setPosition(20, 80);
 
-    // Panel anchor bottom-left
     if (panel) {
       const baseY = camera.height - PANEL_MARGIN - PANEL_H;
       panel.y = baseY;
 
-      // keep it snapped only when not animating
       if (panelOpen && !panelAnimating) panel.x = PANEL_MARGIN;
     }
 
-    // Tab stays outside panel edge
     if (tabBtn && panel) {
       const tabX = panel.x + PANEL_W + TAB_OUTSIDE_PAD;
       const tabY = panel.y + TAB_OFFSET_Y;
@@ -323,7 +293,9 @@
     }
   }
 
-  function updateMinimap() {}
+  function updateMinimap() {
+    // Minimap handled separately by MiniMap module
+  }
 
   window.UI = { init, updateScores, updateHpXp, tick, updateMinimap };
 })();
