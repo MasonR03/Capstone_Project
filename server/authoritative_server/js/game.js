@@ -137,6 +137,15 @@ function initializeServer(io) {
       }
     });
 
+    // Handle class choice from client
+    // TODO: Implement ship class variations on server (currently client-side only)
+    socket.on('chooseClass', (data) => {
+      const ship = entityManager.getShip(socket.id);
+      if (ship && data && data.classKey) {
+        console.log('🎯 Player', ship.getDisplayName(), 'chose class:', data.classKey);
+        // Future: Apply class-specific stats to ship here
+      }
+    });
 
     // Handle input
     socket.on('playerInput', (input) => {
