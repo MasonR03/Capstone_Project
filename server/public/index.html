@@ -66,7 +66,7 @@
       #debug-panel .coord {
         margin: 5px 0;
       }
-    
+
 
     .game-stage {
       display: flex;
@@ -229,7 +229,7 @@
     }
     </style>
   </head>
-  
+
   <body>
     <!-- Login Overlay -->
     <div id="login-overlay">
@@ -238,10 +238,10 @@
         <p class="login-subtitle">Enter Your Name</p>
         <form class="login-form" id="login-form">
           <label for="player-name">Player Name</label>
-          <input 
-            type="text" 
-            id="player-name" 
-            placeholder="Enter your name..." 
+          <input
+            type="text"
+            id="player-name"
+            placeholder="Enter your name..."
             maxlength="20"
             autocomplete="off"
             required
@@ -268,31 +268,20 @@
       <div class="coord">CAM_X: <span id="cam-x">-</span></div>
       <div class="coord">CAM_Y: <span id="cam-y">-</span></div>
       <div class="coord">Vel: <span id="velocity">-</span></div>
+      <div class="coord">Ping: <span id="ping">-</span> ms</div>
     </div>
 
     <!-- socket.io client served by express -->
     <script src="/socket.io/socket.io.js"></script>
 
-
     <!-- phaser browser build -->
     <script src="https://cdn.jsdelivr.net/npm/phaser@3.15.1/dist/phaser.min.js"></script>
 
-
-    <!-- Load the UI -->
-    <script src="ui.js"></script>
-
-    <!-- index.html: load this BEFORE clientGame.js -->
-    <script src="js/ui/minimap.js"></script>
-
-    <!-- debug tools -->
-    <script src="debug.js"></script>
-
-    <!-- login handler -->
+    <!-- Login handler -->
     <script src="login.js"></script>
 
-    <!-- our game code -->
-    <script src="clientGame.js"></script>
+    <!-- ES6 modular architecture -->
+    <script type="module" src="js/main.js"></script>
 
-    
   </body>
 </html>
