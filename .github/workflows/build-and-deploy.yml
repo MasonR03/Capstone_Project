@@ -70,12 +70,12 @@ jobs:
           chmod +x "$ORBITFALL_DIR/reset-db-on-reboot.sh"
 
           # Compose reads `.env` automatically from the working directory.
-          cat > "$ORBITFALL_DIR/.env" <<EOF
-          APP_IMAGE=$APP_IMAGE
-          HOST_PORT=$HOST_PORT
-          POSTGRES_PASSWORD=$POSTGRES_PASSWORD
-          INIT_SQL_PATH=$ORBITFALL_DIR/postgres/init.sql
-          EOF
+          printf "APP_IMAGE=%s\nHOST_PORT=%s\nPOSTGRES_PASSWORD=%s\nINIT_SQL_PATH=%s\n" \
+            "$APP_IMAGE" \
+            "$HOST_PORT" \
+            "$POSTGRES_PASSWORD" \
+            "$ORBITFALL_DIR/postgres/init.sql" \
+            > "$ORBITFALL_DIR/.env"
 
           cd "$ORBITFALL_DIR"
 
@@ -110,20 +110,20 @@ jobs:
               if command -v systemctl >/dev/null 2>&1 && command -v sudo >/dev/null 2>&1; then
                 if sudo -n true >/dev/null 2>&1; then
                   local svc_name="orbitfall-reset-db-${stack_name}.service"
-                  cat > "$ORBITFALL_DIR/$svc_name" <<EOF
-                  [Unit]
-                  Description=Orbitfall reset DB volume on reboot (${stack_name})
-                  After=docker.service
-                  Wants=docker.service
-
-                  [Service]
-                  Type=oneshot
-                  Environment=ORBITFALL_DIR=${ORBITFALL_DIR}
-                  ExecStart=${ORBITFALL_DIR}/reset-db-on-reboot.sh ${stack_name}
-
-                  [Install]
-                  WantedBy=multi-user.target
-EOF
+                  printf "%s\n" \
+                    "[Unit]" \
+                    "Description=Orbitfall reset DB volume on reboot (${stack_name})" \
+                    "After=docker.service" \
+                    "Wants=docker.service" \
+                    "" \
+                    "[Service]" \
+                    "Type=oneshot" \
+                    "Environment=ORBITFALL_DIR=${ORBITFALL_DIR}" \
+                    "ExecStart=${ORBITFALL_DIR}/reset-db-on-reboot.sh ${stack_name}" \
+                    "" \
+                    "[Install]" \
+                    "WantedBy=multi-user.target" \
+                    > "$ORBITFALL_DIR/$svc_name"
                   sudo cp -f "$ORBITFALL_DIR/$svc_name" "/etc/systemd/system/$svc_name"
                   sudo systemctl daemon-reload
                   sudo systemctl enable "$svc_name"
