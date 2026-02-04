@@ -1,11 +1,16 @@
 let prismaSingleton = null;
 let prismaInitError = null;
+let warnedMissingDatabaseUrl = false;
 
 function getPrismaClient() {
   if (prismaSingleton) return prismaSingleton;
   if (prismaInitError) return null;
 
   if (!process.env.DATABASE_URL) {
+    if (!warnedMissingDatabaseUrl) {
+      warnedMissingDatabaseUrl = true;
+      console.warn('[persistence] DATABASE_URL not set; DB persistence disabled.');
+    }
     return null;
   }
 
@@ -41,4 +46,3 @@ async function disconnectPrisma() {
 }
 
 module.exports = { getPrismaClient, disconnectPrisma };
-

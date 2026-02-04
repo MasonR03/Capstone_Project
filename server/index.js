@@ -57,8 +57,33 @@ void (async () => {
   try {
     await prisma.$connect();
     console.log('✅ Database connected (Prisma)');
+
+    // Best-effort safety net: ensure the PlayerProfile table exists even if the
+    // Postgres volume was created before postgres/init.sql was mounted.
+    try {
+      await prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS "PlayerProfile" (
+          "id" TEXT PRIMARY KEY,
+          "username" TEXT NOT NULL UNIQUE,
+          "xp" INTEGER NOT NULL DEFAULT 0,
+          "maxXp" INTEGER NOT NULL DEFAULT 100,
+          "starsCollected" INTEGER NOT NULL DEFAULT 0,
+          "gamesPlayed" INTEGER NOT NULL DEFAULT 0,
+          "lastSeenAt" TIMESTAMP(3),
+          "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+      `);
+      console.log('✅ PlayerProfile table ready');
+    } catch (schemaErr) {
+      console.warn(
+        '⚠️ Failed to ensure PlayerProfile table exists. Player persistence may not work as expected.'
+      );
+      console.warn(schemaErr);
+    }
   } catch (err) {
     console.warn('⚠️ Database connection failed. Player persistence will be disabled until DB is reachable.');
+    console.warn(err);
   }
 })();
 
