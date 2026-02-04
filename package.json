@@ -4,7 +4,11 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "server": "node server/index.js",
+    "server": "node scripts/server.js",
+    "server:raw": "node server/index.js",
+    "db:push": "prisma db push",
+    "db:migrate": "prisma migrate dev",
+    "db:studio": "prisma studio",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
@@ -21,6 +25,7 @@
   "homepage": "https://github.com/MasonR03/Capstone_Project#readme",
   "dependencies": {
     "arcade-physics": "^0.1.0",
+    "@prisma/client": "^5.0.0",
     "datauri": "^4.1.0",
     "dotenv": "^16.1.4",
     "express": "^5.1.0",
@@ -28,5 +33,8 @@
     "parse5": "^6.0.1",
     "phaser": "^3.90.0",
     "socket.io": "^4.8.1"
+  },
+  "devDependencies": {
+    "prisma": "^5.0.0"
   }
 }

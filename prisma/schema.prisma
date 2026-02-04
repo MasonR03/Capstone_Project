@@ -1,0 +1,21 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model PlayerProfile {
+  id             String   @id @default(cuid())
+  username       String   @unique
+  xp             Int      @default(0)
+  maxXp          Int      @default(100)
+  starsCollected Int      @default(0)
+  gamesPlayed    Int      @default(0)
+  lastSeenAt     DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
