@@ -29,7 +29,7 @@ This project demonstrates a Phaser 3 based client and an "authoritative" Node.js
 1. Prerequisites
   - Node.js 14+
   - npm (bundled with Node.js)
-
+  - Docker / Docker Compose
 2. Install dependencies
 
   ```powershell
