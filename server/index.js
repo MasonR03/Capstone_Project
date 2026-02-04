@@ -9,6 +9,8 @@ try {
   // dotenv not installed or failed to load; proceed using process.env
 }
 
+const { getPrismaClient, disconnectPrisma } = require('./persistence/prisma');
+
 // Import the authoritative server
 const { initializeServer } = require('./authoritative_server/js/game');
 
@@ -46,6 +48,21 @@ app.get('/', (req, res) => {
 initializeServer(io);
 
 // ------------------------------
+// Optional DB connection check (Prisma)
+// ------------------------------
+void (async () => {
+  const prisma = getPrismaClient();
+  if (!prisma) return;
+
+  try {
+    await prisma.$connect();
+    console.log('✅ Database connected (Prisma)');
+  } catch (err) {
+    console.warn('⚠️ Database connection failed. Player persistence will be disabled until DB is reachable.');
+  }
+})();
+
+// ------------------------------
 // Start the server
 // Read port from environment (or .env). Falls back to 8082.
 // ------------------------------
@@ -53,3 +70,24 @@ const PORT = process.env.PORT || 8082;
 server.listen(PORT, () => {
   console.log(`Game server running at http://localhost:${PORT}`);
 });
+
+// ------------------------------
+// Graceful shutdown (best-effort)
+// ------------------------------
+let shuttingDown = false;
+async function shutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+
+  console.log(`\n${signal} received. Shutting down...`);
+  try {
+    server.close(() => {});
+  } catch (err) {
+    // ignore
+  }
+  await disconnectPrisma();
+  process.exit(0);
+}
+
+process.on('SIGINT', () => void shutdown('SIGINT'));
+process.on('SIGTERM', () => void shutdown('SIGTERM'));

@@ -22,6 +22,7 @@ This project demonstrates a Phaser 3 based client and an "authoritative" Node.js
 - Socket.IO (real-time networking)
 - Phaser 3 (game engine)
 - jsdom (used by the server runner)
+- Prisma + PostgreSQL (optional player persistence)
 
 ## Getting started
 
@@ -39,9 +40,13 @@ This project demonstrates a Phaser 3 based client and an "authoritative" Node.js
 
   ```powershell
   npm run server
-  # or
-  node .\server\index.js
   ```
+
+  - In local development, if `DATABASE_URL` is not set (or points to localhost but the DB isn’t running) and Docker Compose is available, this will:
+    - start Postgres (`docker compose up -d db`)
+    - sync the schema (`prisma db push`)
+
+  - To skip the DB bootstrap, set `SKIP_DB_BOOTSTRAP=1` or run `npm run server:raw`.
 
   - When the server finishes loading it will log a message such as:
 
@@ -56,6 +61,16 @@ This project demonstrates a Phaser 3 based client and an "authoritative" Node.js
   ```
   http://localhost:[PORT]
   ```
+
+## Player persistence (username + stats)
+
+When `DATABASE_URL` is set and the DB is reachable, the server will persist a small profile keyed by `username`:
+
+- `xp` / `maxXp`
+- `starsCollected`
+- `gamesPlayed`
+
+The profile is loaded the first time the client emits `setPlayerName`, and is updated on star pickup and disconnect.
 
 
 ## Troubleshooting

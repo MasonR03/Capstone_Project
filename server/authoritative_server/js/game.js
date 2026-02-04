@@ -4,6 +4,12 @@
 const { ArcadePhysics } = require('arcade-physics');
 const UI = require('./ui');
 const EntityManager = require('./managers/EntityManager');
+const {
+  normalizeUsername,
+  getOrCreateProfile,
+  updateProfile,
+  recordStarCollected
+} = require('../../persistence/playerProfiles');
 
 // EntityManager instance (initialized in initializeServer)
 let entityManager = null;
@@ -101,6 +107,10 @@ function initializeServer(io) {
     removeStalePlayers(io);
     console.log('🎮 User connected:', socket.id.substring(0, 8));
 
+    socket.data.username = null;
+    socket.data.profileLoaded = false;
+    socket.data.profileLoadPromise = null;
+
     // Create player ship using EntityManager
     const startX = Math.floor(Math.random() * (WORLD_WIDTH - 100)) + 50;
     const startY = Math.floor(Math.random() * (WORLD_HEIGHT - 100)) + 50;
@@ -141,13 +151,67 @@ function initializeServer(io) {
       }
     });
 
-    // Handle player name from client
-    socket.on('setPlayerName', (playerName) => {
+    // Handle player name from client (acts as a lightweight "login")
+    socket.on('setPlayerName', async (playerName) => {
       const ship = entityManager.getShip(socket.id);
-      if (ship && playerName) {
-        ship.setPlayerName(playerName);
-        console.log('👤 Player', socket.id.substring(0, 8), 'set name to:', playerName);
+      if (!ship) return;
+
+      const username = normalizeUsername(playerName);
+      if (!username) return;
+
+      if (socket.data.username && socket.data.username !== username) {
+        console.warn(
+          '⚠️ Player',
+          socket.id.substring(0, 8),
+          'attempted to change username from',
+          socket.data.username,
+          'to',
+          username,
+          '- ignoring.'
+        );
+        return;
       }
+
+      socket.data.username = username;
+      ship.setPlayerName(username);
+      console.log('👤 Player', socket.id.substring(0, 8), 'set name to:', username);
+
+      // Load persisted stats once per socket.
+      if (socket.data.profileLoaded) return;
+
+      if (!socket.data.profileLoadPromise) {
+        socket.data.profileLoadPromise = getOrCreateProfile(username)
+          .then((profile) => {
+            socket.data.profileLoaded = true;
+            return profile;
+          })
+          .catch(() => {
+            socket.data.profileLoaded = true;
+            return null;
+          })
+          .finally(() => {
+            socket.data.profileLoadPromise = null;
+          });
+      }
+
+      const profile = await socket.data.profileLoadPromise;
+      if (!profile) return;
+
+      const safeMaxXp = Number.isFinite(profile.maxXp) ? Math.max(1, Math.floor(profile.maxXp)) : ship.maxXp;
+      const safeXp = Number.isFinite(profile.xp)
+        ? Math.max(0, Math.min(safeMaxXp, Math.floor(profile.xp)))
+        : ship.xp;
+
+      ship.maxXp = safeMaxXp;
+      ship.xp = safeXp;
+
+      socket.emit('profileLoaded', {
+        username: profile.username,
+        xp: ship.xp,
+        maxXp: ship.maxXp,
+        starsCollected: profile.starsCollected,
+        gamesPlayed: profile.gamesPlayed
+      });
     });
 
     // Handle class selection from client
@@ -194,6 +258,14 @@ function initializeServer(io) {
       const ship = entityManager.getShip(socket.id);
       const playerName = ship ? ship.getDisplayName() : socket.id.substring(0, 8);
       console.log('👋 User disconnected:', playerName);
+
+      const username = socket.data.username || (ship && ship.playerName) || null;
+      if (username && ship) {
+        void updateProfile(username, {
+          xp: Number.isFinite(ship.xp) ? Math.max(0, Math.floor(ship.xp)) : 0,
+          maxXp: Number.isFinite(ship.maxXp) ? Math.max(1, Math.floor(ship.maxXp)) : 100
+        });
+      }
 
       // Clean up the player (EntityManager handles physics body cleanup)
       if (entityManager.removeShip(socket.id)) {
@@ -242,6 +314,11 @@ function handleStarCollection(io, playerBody, starBody) {
 
   // XP gain (uses Ship's gainXP method)
   ship.gainXP(XP_PER_STAR);
+
+  const username = typeof ship.playerName === 'string' ? ship.playerName : null;
+  if (username) {
+    void recordStarCollected(username, { xp: ship.xp, maxXp: ship.maxXp });
+  }
 
   // move star
   const oldPos = { x: star.x, y: star.y };

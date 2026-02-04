@@ -1,0 +1,39 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    ports:
+      - "${DB_BIND_ADDR:-127.0.0.1}:${DB_PORT:-5432}:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-orbitfall}
+    volumes:
+      - orbitfall_pgdata:/var/lib/postgresql/data
+      - ${INIT_SQL_PATH:-./postgres/init.sql}:/docker-entrypoint-initdb.d/00_init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  app:
+    image: ${APP_IMAGE:-capstone-project:latest}
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "${HOST_PORT:-8082}:8082"
+    environment:
+      NODE_ENV: production
+      PORT: 8082
+      SKIP_DB_BOOTSTRAP: 1
+      DB_HOST: db
+      DB_SCHEMA: public
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-orbitfall}
+
+volumes:
+  orbitfall_pgdata:
