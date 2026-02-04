@@ -2,6 +2,18 @@ const { getPrismaClient } = require('./prisma');
 
 const USERNAME_MAX_LEN = 20;
 
+function logPersistenceError(context, username, err) {
+  const code =
+    err && typeof err === 'object' && 'code' in err && typeof err.code === 'string' ? err.code : null;
+  const message =
+    err && typeof err === 'object' && 'message' in err && typeof err.message === 'string'
+      ? err.message
+      : String(err);
+
+  const suffix = code ? ` (code ${code})` : '';
+  console.warn(`[persistence] ${context} for username "${username}"${suffix}: ${message}`);
+}
+
 function normalizeUsername(input) {
   if (typeof input !== 'string') return null;
   const trimmed = input.trim();
@@ -31,7 +43,7 @@ async function getOrCreateProfile(username) {
     });
     return profile;
   } catch (err) {
-    console.warn('[persistence] Failed to upsert PlayerProfile for username:', username);
+    logPersistenceError('Failed to upsert PlayerProfile', username, err);
     return null;
   }
 }
@@ -64,7 +76,7 @@ async function updateProfile(username, data) {
         }
       });
     } catch (createErr) {
-      console.warn('[persistence] Failed to update PlayerProfile for username:', username);
+      logPersistenceError('Failed to update PlayerProfile', username, createErr);
       return null;
     }
   }
@@ -102,7 +114,7 @@ async function recordStarCollected(username, { xp, maxXp } = {}) {
         }
       });
     } catch (createErr) {
-      console.warn('[persistence] Failed to record star for username:', username);
+      logPersistenceError('Failed to record star', username, createErr);
       return null;
     }
   }
