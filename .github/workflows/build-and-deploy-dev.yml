@@ -46,19 +46,108 @@ jobs:
     environment: development
 
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Log in to Docker Hub
         run: echo ${{ secrets.DOCKERHUB_TOKEN }} | docker login -u ${{ secrets.DOCKERHUB_USERNAME }} --password-stdin
 
-      - name: Pull and start container
+      - name: Pull and start stack (app + db)
+        env:
+          APP_IMAGE: ${{ env.IMAGE_NAME }}:${{ github.sha }}-dev
+          HOST_PORT: ${{ env.HOST_PORT }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
         run: |
           docker pull ${{ env.IMAGE_NAME }}:${{ github.sha }}-dev
-          if [ "$(docker ps -q -f name=${{ env.CONTAINER_NAME }})" ]; then
-            docker stop ${{ env.CONTAINER_NAME }}
+          INIT_DIR="$HOME/orbitfall/postgres"
+          mkdir -p "$INIT_DIR"
+          cp -f postgres/init.sql "$INIT_DIR/init.sql"
+          export INIT_SQL_PATH="$INIT_DIR/init.sql"
+
+          if docker compose version >/dev/null 2>&1; then
+            compose() { docker compose "$@"; }
+          else
+            compose() { docker-compose "$@"; }
           fi
-          if [ "$(docker ps -aq -f name=${{ env.CONTAINER_NAME }})" ]; then
-            docker rm ${{ env.CONTAINER_NAME }}
+
+          # Transition: remove legacy single-container deploy (if present)
+          docker rm -f "${{ env.CONTAINER_NAME }}" 2>/dev/null || true
+
+          compose -p "${{ env.CONTAINER_NAME }}" down || true
+          compose -p "${{ env.CONTAINER_NAME }}" up -d --no-build
+
+          compose -p "${{ env.CONTAINER_NAME }}" ps
+
+          DB_CID="$(compose -p "${{ env.CONTAINER_NAME }}" ps -q db)"
+          APP_CID="$(compose -p "${{ env.CONTAINER_NAME }}" ps -q app)"
+
+          if [ -z "$DB_CID" ] || [ -z "$APP_CID" ]; then
+            echo "❌ Expected db/app containers were not created."
+            compose -p "${{ env.CONTAINER_NAME }}" ps || true
+            compose -p "${{ env.CONTAINER_NAME }}" logs --tail 200 || true
+            exit 1
           fi
-          docker run -d \
-            --name ${{ env.CONTAINER_NAME }} \
-            -p ${{ env.HOST_PORT }}:${{ env.CONTAINER_PORT }} \
-            ${{ env.IMAGE_NAME }}:${{ github.sha }}-dev
+
+          echo "⏳ Waiting for db to become healthy..."
+          for i in $(seq 1 60); do
+            health="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$DB_CID" 2>/dev/null || echo unknown)"
+            if [ "$health" = "healthy" ]; then
+              echo "✅ db is healthy"
+              break
+            fi
+            if [ "$health" = "unhealthy" ]; then
+              echo "❌ db is unhealthy"
+              compose -p "${{ env.CONTAINER_NAME }}" logs --tail 200 db || true
+              exit 1
+            fi
+            sleep 2
+          done
+
+          health="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$DB_CID" 2>/dev/null || echo unknown)"
+          if [ "$health" != "healthy" ]; then
+            echo "❌ Timed out waiting for db health (status: $health)"
+            compose -p "${{ env.CONTAINER_NAME }}" logs --tail 200 db || true
+            exit 1
+          fi
+
+          echo "⏳ Waiting for app to be running..."
+          for i in $(seq 1 30); do
+            status="$(docker inspect -f '{{.State.Status}}' "$APP_CID" 2>/dev/null || echo missing)"
+            if [ "$status" = "running" ]; then
+              echo "✅ app is running"
+              break
+            fi
+            if [ "$status" = "exited" ] || [ "$status" = "dead" ]; then
+              echo "❌ app is not running (status: $status)"
+              compose -p "${{ env.CONTAINER_NAME }}" logs --tail 200 app || true
+              exit 1
+            fi
+            sleep 2
+          done
+
+          status="$(docker inspect -f '{{.State.Status}}' "$APP_CID" 2>/dev/null || echo missing)"
+          if [ "$status" != "running" ]; then
+            echo "❌ Timed out waiting for app to be running (status: $status)"
+            compose -p "${{ env.CONTAINER_NAME }}" logs --tail 200 app || true
+            exit 1
+          fi
+
+          echo "⏳ Waiting for Prisma to connect to the database..."
+          for i in $(seq 1 60); do
+            if docker logs "$APP_CID" 2>/dev/null | grep -q "✅ Database connected (Prisma)"; then
+              echo "✅ Prisma connected"
+              exit 0
+            fi
+            if docker logs "$APP_CID" 2>/dev/null | grep -q "Database connection failed"; then
+              echo "❌ Prisma reported a DB connection failure"
+              compose -p "${{ env.CONTAINER_NAME }}" logs --tail 200 app || true
+              compose -p "${{ env.CONTAINER_NAME }}" logs --tail 200 db || true
+              exit 1
+            fi
+            sleep 2
+          done
+
+          echo "❌ Timed out waiting for Prisma to connect"
+          compose -p "${{ env.CONTAINER_NAME }}" logs --tail 200 app || true
+          compose -p "${{ env.CONTAINER_NAME }}" logs --tail 200 db || true
+          exit 1
