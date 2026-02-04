@@ -1,0 +1,12 @@
+# Normalize text files across platforms
+* text=auto eol=lf
+
+# Common text types (optional, but explicit)
+*.js   text eol=lf
+*.yml  text eol=lf
+*.yaml text eol=lf
+*.md   text eol=lf
+*.html text eol=lf
+*.css  text eol=lf
+*.json text eol=lf
+Dockerfile text eol=lf
