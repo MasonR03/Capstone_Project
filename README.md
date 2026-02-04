@@ -72,6 +72,19 @@ When `DATABASE_URL` is set and the DB is reachable, the server will persist a sm
 
 The profile is loaded the first time the client emits `setPlayerName`, and is updated on star pickup and disconnect.
 
+## Reset DB on EC2 reboot (optional, destructive)
+
+By default the EC2 Postgres data is stored in a named Docker volume (`orbitfall_pgdata`), so it survives reboots.
+
+If you want the DB to be wiped automatically on host reboot (dev/ephemeral environments only), set a GitHub
+Actions environment variable:
+
+```text
+RESET_DB_ON_REBOOT=1
+```
+
+On deploy, this installs an `@reboot` cron entry that runs `scripts/reset-db-on-reboot.sh` on the EC2 host.
+
 
 ## Troubleshooting
 

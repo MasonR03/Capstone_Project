@@ -57,12 +57,27 @@ jobs:
           APP_IMAGE: ${{ env.IMAGE_NAME }}:${{ github.sha }}-dev
           HOST_PORT: ${{ env.HOST_PORT }}
           POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          RESET_DB_ON_REBOOT: ${{ vars.RESET_DB_ON_REBOOT }}
         run: |
           docker pull ${{ env.IMAGE_NAME }}:${{ github.sha }}-dev
-          INIT_DIR="$HOME/orbitfall/postgres"
-          mkdir -p "$INIT_DIR"
-          cp -f postgres/init.sql "$INIT_DIR/init.sql"
-          export INIT_SQL_PATH="$INIT_DIR/init.sql"
+          ORBITFALL_DIR="$HOME/orbitfall"
+          export ORBITFALL_DIR
+          mkdir -p "$ORBITFALL_DIR/postgres"
+
+          cp -f docker-compose.yml "$ORBITFALL_DIR/docker-compose.yml"
+          cp -f postgres/init.sql "$ORBITFALL_DIR/postgres/init.sql"
+          cp -f scripts/reset-db-on-reboot.sh "$ORBITFALL_DIR/reset-db-on-reboot.sh"
+          chmod +x "$ORBITFALL_DIR/reset-db-on-reboot.sh"
+
+          # Compose reads `.env` automatically from the working directory.
+          cat > "$ORBITFALL_DIR/.env" <<EOF
+          APP_IMAGE=$APP_IMAGE
+          HOST_PORT=$HOST_PORT
+          POSTGRES_PASSWORD=$POSTGRES_PASSWORD
+          INIT_SQL_PATH=$ORBITFALL_DIR/postgres/init.sql
+          EOF
+
+          cd "$ORBITFALL_DIR"
 
           if docker compose version >/dev/null 2>&1; then
             compose() { docker compose "$@"; }
@@ -75,6 +90,15 @@ jobs:
 
           compose -p "${{ env.CONTAINER_NAME }}" down || true
           compose -p "${{ env.CONTAINER_NAME }}" up -d --no-build
+
+          # Optional: wipe DB on host reboot (ephemeral environments only).
+          if [ "${RESET_DB_ON_REBOOT:-0}" = "1" ]; then
+            echo "🔁 Installing @reboot DB reset cron (this wipes all player stats on reboot)"
+            CRON_LINE="@reboot ORBITFALL_DIR=$ORBITFALL_DIR $ORBITFALL_DIR/reset-db-on-reboot.sh ${{ env.CONTAINER_NAME }} >> $ORBITFALL_DIR/reboot-reset.log 2>&1"
+            (crontab -l 2>/dev/null | grep -v "reset-db-on-reboot.sh" || true; echo "$CRON_LINE") | crontab -
+          else
+            echo "ℹ️ RESET_DB_ON_REBOOT not enabled; leaving DB persistent across reboots."
+          fi
 
           compose -p "${{ env.CONTAINER_NAME }}" ps
 
