@@ -1,8 +1,14 @@
-# Use a lightweight Node.js base image for production
-FROM node:20-alpine AS deps
+# Prisma engines are sensitive to libc + OpenSSL versions.
+# Use Debian-based images (glibc) to avoid Alpine/musl + libssl compatibility issues on EC2.
+FROM node:20-bookworm-slim AS deps
 
 # Create app directory inside the container
 WORKDIR /app
+
+# Ensure OpenSSL is present so Prisma can detect the right engine variant.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends openssl ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
 
 # Install dependencies first to leverage cached layers
 COPY package*.json ./
@@ -13,8 +19,13 @@ RUN npm ci
 RUN npx prisma generate
 RUN npm prune --omit=dev
 
-FROM node:20-alpine
+FROM node:20-bookworm-slim
 WORKDIR /app
+
+# Runtime needs OpenSSL libs for Prisma.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends openssl ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
 
 # Bring in production node_modules (includes generated Prisma client)
 COPY --from=deps /app/node_modules ./node_modules
