@@ -5,13 +5,14 @@
  */
 
 // Get config with fallback
+import '../stats/stats.js';
 const getConfig = () => {
   if (typeof GameConfig !== 'undefined') return GameConfig;
   if (typeof window !== 'undefined' && window.GameConfig) return window.GameConfig;
   return {
     shipClasses: {
-      hunter: { name: 'Hunter', spriteKey: 'ship_hunter', stats: { maxHp: 90, speed: 260, accel: 220 } },
-      tanker: { name: 'Tanker', spriteKey: 'ship_tanker', stats: { maxHp: 160, speed: 180, accel: 160 } }
+      hunter: { name: 'Hunter', spriteKey: 'ship_hunter', stats: hunter },
+      tanker: { name: 'Tanker', spriteKey: 'ship_tanker', stats: tanker }
     },
     defaultClass: 'hunter',
     sprites: {
