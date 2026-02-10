@@ -1,0 +1,53 @@
+@startuml
+skinparam componentStyle rectangle
+skinparam shadowing false
+skinparam packageStyle rectangle
+
+actor Player
+
+package "Client (Phaser)" {
+  [main.js] as Main
+  [GameScene] as Scene
+  [InputManager] as Input
+  [NetworkManager] as Net
+  [GameStateManager] as State
+  [ClientEntityManager] as EntityMgr
+  [ClientShip] as CShip
+  [UIManager] as UI
+}
+
+Player --> Main : open page
+Main --> Net : connect(playerName)
+Main --> Scene : start Phaser
+
+Scene --> Input : init(scene)
+Scene --> UI : init(scene, game)
+Scene --> EntityMgr : new(scene)
+Scene --> Net : socket handlers
+Scene --> State : state updates
+
+Input --> Scene : input state
+Scene --> Net : emit playerInput
+Net --> State : starsLocation, updateScore
+Net --> Scene : currentPlayers, playerUpdates
+
+EntityMgr --> CShip : create/update ships
+CShip --> UI : name label (via scene text)
+
+note right of Net
+  Emits: setPlayerName,
+  chooseClass, playerInput
+  Receives: currentPlayers,
+  playerUpdates, updateScore,
+  starsLocation
+end note
+
+note bottom of Scene
+  Update loop:
+  - apply prediction
+  - interpolate remote ships
+  - send input
+  - update minimap
+end note
+
+@enduml

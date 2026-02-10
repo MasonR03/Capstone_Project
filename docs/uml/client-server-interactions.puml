@@ -1,0 +1,32 @@
+@startuml
+skinparam shadowing false
+
+actor Player
+participant "Client (GameScene)" as Client
+participant "Server (Socket.IO + Game)" as Server
+
+== Connect ==
+Player -> Client : load page
+Client -> Server : connect()
+Server --> Client : currentPlayers
+Server --> Client : starsLocation
+Server --> Client : updateScore
+
+== Play Loop ==
+Player -> Client : input (left/right/up/down)
+Client -> Server : playerInput
+Server -> Server : updateGame tick
+Server --> Client : playerUpdates
+Client -> Client : predict + reconcile
+
+== Class Select ==
+Player -> Client : choose class
+Client -> Server : chooseClass
+
+note over Client,Server
+  Server is authoritative.
+  Client predicts locally and
+  reconciles on snapshots.
+end note
+
+@enduml
