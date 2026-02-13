@@ -104,16 +104,6 @@ class UIManager {
   }
 
   /**
-   * Update scores display
-   * @param {Object} scores - { red, blue }
-   */
-  updateScores(scores) {
-    if (this.hud) {
-      this.hud.updateScores(scores);
-    }
-  }
-
-  /**
    * Update HP and XP display
    * @param {Object} stats - { hp, maxHp, xp, maxXp }
    */
@@ -125,11 +115,11 @@ class UIManager {
 
   /**
    * Update minimap
-   * @param {Object} data - { players, myId, stars }
+   * @param {Object} data - { players, myId }
    */
   updateMinimap(data) {
     if (this.minimap) {
-      this.minimap.update(data.players, data.stars, data.myId);
+      this.minimap.update(data.players, data.myId);
     }
   }
 
@@ -253,7 +243,6 @@ if (typeof window !== 'undefined') {
       uiManager.init(scene, game, options);
       return window.UI; // Return self for chaining
     },
-    updateScores: (scores) => uiManager.updateScores(scores),
     updateHpXp: (stats) => uiManager.updateHpXp(stats),
     tick: (camera) => uiManager.tick(camera),
     updateMinimap: (data) => uiManager.updateMinimap(data)

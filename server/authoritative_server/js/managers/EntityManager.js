@@ -157,20 +157,6 @@ class EntityManager {
     return removed;
   }
 
-  /**
-   * Set up collision detection between a ship and star bodies
-   * @param {string} shipId - The ship ID
-   * @param {Array} starBodies - Array of star physics bodies
-   * @param {Function} collisionHandler - Callback for collision (playerBody, starBody)
-   */
-  setupStarCollisions(shipId, starBodies, collisionHandler) {
-    const ship = this.ships.get(shipId);
-    if (!ship || !ship.body) return;
-
-    starBodies.forEach((starBody) => {
-      this.physics.add.overlap(ship.body, starBody, collisionHandler);
-    });
-  }
 }
 
 module.exports = EntityManager;
