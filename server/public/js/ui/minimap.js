@@ -1,7 +1,7 @@
 /**
  * Minimap - Round minimap UI component
  *
- * Shows the local player, other players, stars, and world edge indicators.
+ * Shows the local player, other players, and world edge indicators.
  * Follows the local player and anchors to bottom-right of screen.
  */
 
@@ -23,8 +23,7 @@ const getConfig = () => {
         myDot: 0x00e5ff,
         redDot: 0xff6666,
         blueDot: 0x6688ff,
-        otherDot: 0xffffff,
-        starDot: 0xffd93b
+        otherDot: 0xffffff
       }
     }
   };
@@ -184,10 +183,9 @@ class Minimap {
   /**
    * Update the minimap display
    * @param {Object} players - Map of id -> {x, y, team}
-   * @param {Array} stars - Array of {x, y}
    * @param {string} myId - Local player's ID
    */
-  update(players, stars, myId) {
+  update(players, myId) {
     this.graphics.clear();
 
     // Nothing to center on yet
@@ -196,13 +194,6 @@ class Minimap {
 
     // Show world edge hints
     this._drawWorldEdges(me);
-
-    // Stars (gold)
-    if (Array.isArray(stars)) {
-      stars.forEach(s => {
-        this._plot(s.x - me.x, s.y - me.y, this.colors.starDot, 3);
-      });
-    }
 
     // Players
     for (const id in players) {
@@ -255,9 +246,9 @@ if (typeof window !== 'undefined') {
       const minimap = new Minimap(scene, { worldW, worldH, ...opts });
       return minimap;
     },
-    update: (minimap, players, stars, myId) => {
+    update: (minimap, players, myId) => {
       if (minimap && minimap.update) {
-        minimap.update(players, stars, myId);
+        minimap.update(players, myId);
       }
     },
     anchor: (minimap, scene, opts = {}) => {

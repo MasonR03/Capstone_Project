@@ -206,16 +206,7 @@ class NetworkManager {
    * @private
    */
   _setupDefaultHandlers() {
-    // Stars location
-    this.socket.on('starsLocation', (starsInfo) => {
-      console.log('📍 Star locations received:', starsInfo);
-      gameState.updateStarPositions(starsInfo);
-    });
-
-    // Score updates
-    this.socket.on('updateScore', (scores) => {
-      gameState.updateScores(scores);
-    });
+    // No default gameplay UI channels are required here currently.
   }
 
   /**

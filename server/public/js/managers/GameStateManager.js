@@ -26,9 +26,6 @@ class GameStateManager {
       playerNames: {},        // playerId -> player name
       playerNameTexts: {},    // playerId -> Phaser text object
 
-      // Scores
-      serverScores: { red: 0, blue: 0 },
-
       // Local player stats
       localPlayerStats: {
         hp: 100,
@@ -36,11 +33,6 @@ class GameStateManager {
         xp: 0,
         maxXp: 100
       },
-
-      // Stars
-      starSprites: [],
-      latestStars: [],
-      pendingStarPositions: null,
 
       // Network
       currentPing: 0
@@ -211,13 +203,6 @@ class GameStateManager {
   }
 
   /**
-   * Update server scores
-   */
-  updateScores(scores) {
-    this.set('serverScores', scores || { red: 0, blue: 0 });
-  }
-
-  /**
    * Update local player stats
    */
   updateLocalPlayerStats(stats) {
@@ -323,61 +308,6 @@ class GameStateManager {
   }
 
   /**
-   * Add star sprite
-   */
-  addStarSprite(sprite) {
-    this._state.starSprites.push(sprite);
-  }
-
-  /**
-   * Get star sprites
-   */
-  getStarSprites() {
-    return this._state.starSprites;
-  }
-
-  /**
-   * Update star positions from server
-   */
-  updateStarPositions(starsInfo) {
-    this._state.latestStars = starsInfo || this._state.latestStars;
-
-    if (this._state.starSprites.length > 0) {
-      (starsInfo || []).forEach((star, index) => {
-        if (this._state.starSprites[index]) {
-          this._state.starSprites[index].setPosition(star.x, star.y);
-        }
-      });
-      this._state.pendingStarPositions = null;
-    } else {
-      this._state.pendingStarPositions = starsInfo;
-    }
-
-    this._emit('starsUpdated', starsInfo, null);
-  }
-
-  /**
-   * Apply pending star positions (called when scene is ready)
-   */
-  applyPendingStarPositions() {
-    if (this._state.pendingStarPositions && this._state.starSprites.length > 0) {
-      this._state.pendingStarPositions.forEach((star, index) => {
-        if (this._state.starSprites[index]) {
-          this._state.starSprites[index].setPosition(star.x, star.y);
-        }
-      });
-      this._state.pendingStarPositions = null;
-    }
-  }
-
-  /**
-   * Get latest stars data for minimap
-   */
-  getLatestStars() {
-    return this._state.latestStars;
-  }
-
-  /**
    * Set camera follow state
    */
   setCameraFollowSet(value) {
@@ -396,13 +326,6 @@ class GameStateManager {
    */
   getLocalPlayerStats() {
     return { ...this._state.localPlayerStats };
-  }
-
-  /**
-   * Get server scores
-   */
-  getServerScores() {
-    return { ...this._state.serverScores };
   }
 
   /**

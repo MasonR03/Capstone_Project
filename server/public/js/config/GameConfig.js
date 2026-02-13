@@ -73,8 +73,7 @@ const GameConfig = {
       myDot: 0x00e5ff,
       redDot: 0xff6666,
       blueDot: 0x6688ff,
-      otherDot: 0xffffff,
-      starDot: 0xffd93b
+      otherDot: 0xffffff
     }
   },
 
@@ -100,15 +99,6 @@ const GameConfig = {
     pingInterval: 1000
   },
 
-  // Star count
-  stars: {
-    count: 5,
-    scale: 1.15,
-    pulseScale: 1.35,
-    pulseAlpha: 0.75,
-    pulseDuration: 700
-  },
-
   // Sprite dimensions
   sprites: {
     ship: {
@@ -124,7 +114,6 @@ const GameConfig = {
       hunter: 'assets/HunterShip.png',
       tanker: 'assets/TankerShip.png'
     },
-    star: 'assets/Star.png',
     hudBars: 'assets/Bar.png',
     menuIn: 'assets/MenuSliderIn.png',
     menuOut: 'assets/MenuSliderOut.png'
