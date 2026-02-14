@@ -4,6 +4,7 @@
 const { ArcadePhysics } = require('arcade-physics');
 const UI = require('./ui');
 const EntityManager = require('./managers/EntityManager');
+const ShootingStarManager = require('./managers/ShootingStarManager');
 const {
   normalizeUsername,
   getOrCreateProfile,
@@ -221,6 +222,12 @@ function initializeServer(io) {
     });
   });
 
+  // Shooting star manager
+  const shootingStarManager = new ShootingStarManager(io, {
+    width: WORLD_WIDTH,
+    height: WORLD_HEIGHT
+  });
+
   // Game loop (60 FPS)
   let frameCount = 0;
   let lastTime = Date.now();
@@ -230,6 +237,7 @@ function initializeServer(io) {
     const delta = currentTime - lastTime;
     lastTime = currentTime;
 
+    shootingStarManager.update(delta);
     updateGame(io, frameCount, delta);
     frameCount++;
   }, 1000 / 60);
