@@ -34,6 +34,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       POSTGRES_DB: ${POSTGRES_DB:-orbitfall}
+      SESSION_SECRET: ${SESSION_SECRET:-orbitfall-dev-secret}
 
 volumes:
   orbitfall_pgdata:

@@ -98,13 +98,8 @@ class GameScene extends Phaser.Scene {
     // Set up socket event handlers
     this._setupSocketHandlers();
 
-    // Request current players (in case we missed the initial event)
-    if (networkManager.isConnected()) {
-      const myId = gameState.getMyId();
-      if (myId) {
-        networkManager.emit('setPlayerName', myId);
-      }
-    }
+    // Set up socket event handlers is enough — session auth means server
+    // already knows our username on connect, no setPlayerName needed.
   }
 
   /**
