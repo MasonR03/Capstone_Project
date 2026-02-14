@@ -67,6 +67,8 @@ class ClientShip {
     // Create visual elements
     this.sprite = null;
     this.nameText = null;
+    this.trailParticles = null;
+    this.trailEmitter = null;
     this._createSprite(serverState);
   }
 
@@ -104,6 +106,9 @@ class ClientShip {
     // Apply team tint
     this._applyTeamTint();
 
+    // Create trailing glow particles
+    this._createTrail();
+
     // Create name label
     const displayName = this.playerName || this.id.substring(0, 8);
     this.nameText = scene.add.text(this.x, this.y - GameConfig.sprites.nameOffset, displayName, {
@@ -117,6 +122,33 @@ class ClientShip {
     this.nameText.setDepth(2);
 
     console.log('Created sprite for player:', displayName, 'at', this.x, this.y);
+  }
+
+  /**
+   * Create trailing glow particle emitter
+   * @private
+   */
+  _createTrail() {
+    const scene = this.scene;
+    if (!scene.textures.exists('glow_particle')) return;
+
+    this.trailParticles = scene.add.particles('glow_particle');
+    this.trailParticles.setDepth(0);
+
+    let tint = 0x00ffff;
+    if (this.team === 'red') tint = 0xff6666;
+    else if (this.team === 'blue') tint = 0x6688ff;
+
+    this.trailEmitter = this.trailParticles.createEmitter({
+      speed: { min: 5, max: 20 },
+      scale: { start: 0.25, end: 0 },
+      alpha: { start: 0.35, end: 0 },
+      lifespan: 500,
+      blendMode: 'ADD',
+      frequency: 40,
+      tint: tint,
+      follow: this.sprite
+    });
   }
 
   /**
@@ -397,6 +429,11 @@ class ClientShip {
    * Clean up resources
    */
   destroy() {
+    if (this.trailParticles) {
+      this.trailParticles.destroy();
+      this.trailParticles = null;
+      this.trailEmitter = null;
+    }
     if (this.sprite) {
       this.sprite.destroy();
       this.sprite = null;

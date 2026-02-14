@@ -63,6 +63,16 @@ class GameScene extends Phaser.Scene {
     this.physics.world.setBounds(0, 0, WORLD_W, WORLD_H);
     this.cameras.main.setBounds(0, 0, WORLD_W, WORLD_H);
 
+    // Generate soft glow particle texture for ship trails
+    const glowCanvas = this.textures.createCanvas('glow_particle', 32, 32);
+    const ctx = glowCanvas.getContext();
+    const gradient = ctx.createRadialGradient(16, 16, 0, 16, 16, 16);
+    gradient.addColorStop(0, 'rgba(255, 255, 255, 1)');
+    gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, 32, 32);
+    glowCanvas.refresh();
+
     // Add tiled backdrop covering the entire world
     this.add.tileSprite(0, 0, WORLD_W, WORLD_H, 'backdrop')
       .setOrigin(0, 0)
