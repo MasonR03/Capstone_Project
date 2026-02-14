@@ -1,6 +1,8 @@
 const path = require('path');
 const express = require('express');
 const http = require('http');
+const session = require('express-session');
+const connectPgSimple = require('connect-pg-simple');
 const { Server } = require('socket.io');
 // Load environment variables from .env if present
 try {
@@ -10,18 +12,55 @@ try {
 }
 
 const { getPrismaClient, disconnectPrisma } = require('./persistence/prisma');
+const authRoutes = require('./auth/routes');
 
 // Import the authoritative server
 const { initializeServer } = require('./authoritative_server/js/game');
 
 const app = express();
 const server = http.createServer(app);
+
+// ------------------------------
+// Session middleware
+// ------------------------------
+const PgStore = connectPgSimple(session);
+
+const sessionMiddleware = session({
+  store: new PgStore({
+    conString: process.env.DATABASE_URL,
+    tableName: 'session',
+    createTableIfMissing: true,
+  }),
+  secret: process.env.SESSION_SECRET || 'orbitfall-dev-secret',
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    httpOnly: true,
+    sameSite: 'lax',
+  },
+});
+
+app.use(sessionMiddleware);
+app.use(express.json());
+
+// ------------------------------
+// Socket.IO with session sharing
+// ------------------------------
 const io = new Server(server, {
   cors: {
     origin: '*',
     methods: ['GET', 'POST'],
   },
 });
+
+// Share express-session with Socket.IO
+io.engine.use(sessionMiddleware);
+
+// ------------------------------
+// Auth API routes
+// ------------------------------
+app.use('/api', authRoutes);
 
 // ------------------------------
 // Serve your public client files
@@ -65,6 +104,8 @@ void (async () => {
         CREATE TABLE IF NOT EXISTS "PlayerProfile" (
           "id" TEXT PRIMARY KEY,
           "username" TEXT NOT NULL UNIQUE,
+          "email" TEXT UNIQUE,
+          "passwordHash" TEXT,
           "xp" INTEGER NOT NULL DEFAULT 0,
           "maxXp" INTEGER NOT NULL DEFAULT 100,
           "starsCollected" INTEGER NOT NULL DEFAULT 0,
@@ -80,6 +121,25 @@ void (async () => {
         '⚠️ Failed to ensure PlayerProfile table exists. Player persistence may not work as expected.'
       );
       console.warn(schemaErr);
+    }
+
+    // Ensure session table exists
+    try {
+      await prisma.$executeRawUnsafe(`
+        CREATE TABLE IF NOT EXISTS "session" (
+          "sid" VARCHAR NOT NULL COLLATE "default",
+          "sess" JSON NOT NULL,
+          "expire" TIMESTAMP(6) NOT NULL,
+          CONSTRAINT "session_pkey" PRIMARY KEY ("sid")
+        )
+      `);
+      await prisma.$executeRawUnsafe(`
+        CREATE INDEX IF NOT EXISTS "IDX_session_expire" ON "session" ("expire")
+      `);
+      console.log('✅ Session table ready');
+    } catch (sessionErr) {
+      console.warn('⚠️ Failed to ensure session table exists.');
+      console.warn(sessionErr);
     }
   } catch (err) {
     console.warn('⚠️ Database connection failed. Player persistence will be disabled until DB is reachable.');

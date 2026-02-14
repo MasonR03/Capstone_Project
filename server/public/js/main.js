@@ -78,7 +78,7 @@ async function boot() {
            window.playerName;
   };
 
-  // Wait for login with polling
+  // Wait for login with polling (no timeout — auth is required)
   const waitForLogin = () => {
     return new Promise((resolve) => {
       const loginCheckInterval = setInterval(() => {
@@ -87,15 +87,6 @@ async function boot() {
           resolve(window.playerName);
         }
       }, 100);
-
-      // Timeout fallback after 30 seconds
-      setTimeout(() => {
-        clearInterval(loginCheckInterval);
-        const fallbackName = window.playerName || 'Player' + Math.floor(Math.random() * 1000);
-        window.playerName = fallbackName;
-        console.warn('⚠️ Login timeout - using fallback name:', fallbackName);
-        resolve(fallbackName);
-      }, 30000);
     });
   };
 

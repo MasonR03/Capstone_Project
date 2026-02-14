@@ -65,12 +65,24 @@ function initializeServer(io) {
 
   console.log('✅ Physics world initialized');
 
+  // Reject sockets without a valid session
+  io.use((socket, next) => {
+    const session = socket.request.session;
+    if (session && session.username) {
+      next();
+    } else {
+      next(new Error('Authentication required'));
+    }
+  });
+
   // Handle client connections
   io.on('connection', (socket) => {
     removeStalePlayers(io);
-    console.log('🎮 User connected:', socket.id.substring(0, 8));
 
-    socket.data.username = null;
+    const username = normalizeUsername(socket.request.session.username);
+    console.log('🎮 User connected:', socket.id.substring(0, 8), '(' + username + ')');
+
+    socket.data.username = username;
     socket.data.profileLoaded = false;
     socket.data.profileLoadPromise = null;
 
@@ -87,6 +99,9 @@ function initializeServer(io) {
       maxHp: classConfig.maxHp,
       hp: classConfig.maxHp
     });
+
+    // Set player name from session (already authenticated)
+    ship.setPlayerName(username);
 
     const activeSocketCount = io.sockets?.sockets?.size ?? 0;
     console.log('📊 Total active players:', entityManager.getCount());
@@ -106,68 +121,37 @@ function initializeServer(io) {
       }
     });
 
-    // Handle player name from client (acts as a lightweight "login")
-    socket.on('setPlayerName', async (playerName) => {
-      const ship = entityManager.getShip(socket.id);
-      if (!ship) return;
+    // Auto-load profile on connection (replaces old setPlayerName-triggered load)
+    if (username) {
+      socket.data.profileLoadPromise = getOrCreateProfile(username)
+        .then((profile) => {
+          socket.data.profileLoaded = true;
+          if (!profile) return;
 
-      const username = normalizeUsername(playerName);
-      if (!username) return;
+          const currentShip = entityManager.getShip(socket.id);
+          if (!currentShip) return;
 
-      if (socket.data.username && socket.data.username !== username) {
-        console.warn(
-          '⚠️ Player',
-          socket.id.substring(0, 8),
-          'attempted to change username from',
-          socket.data.username,
-          'to',
-          username,
-          '- ignoring.'
-        );
-        return;
-      }
+          const safeMaxXp = Number.isFinite(profile.maxXp) ? Math.max(1, Math.floor(profile.maxXp)) : currentShip.maxXp;
+          const safeXp = Number.isFinite(profile.xp)
+            ? Math.max(0, Math.min(safeMaxXp, Math.floor(profile.xp)))
+            : currentShip.xp;
 
-      socket.data.username = username;
-      ship.setPlayerName(username);
-      console.log('👤 Player', socket.id.substring(0, 8), 'set name to:', username);
+          currentShip.maxXp = safeMaxXp;
+          currentShip.xp = safeXp;
 
-      // Load persisted stats once per socket.
-      if (socket.data.profileLoaded) return;
-
-      if (!socket.data.profileLoadPromise) {
-        socket.data.profileLoadPromise = getOrCreateProfile(username)
-          .then((profile) => {
-            socket.data.profileLoaded = true;
-            return profile;
-          })
-          .catch(() => {
-            socket.data.profileLoaded = true;
-            return null;
-          })
-          .finally(() => {
-            socket.data.profileLoadPromise = null;
+          socket.emit('profileLoaded', {
+            username: profile.username,
+            xp: currentShip.xp,
+            maxXp: currentShip.maxXp,
+            starsCollected: profile.starsCollected,
+            gamesPlayed: profile.gamesPlayed
           });
-      }
-
-      const profile = await socket.data.profileLoadPromise;
-      if (!profile) return;
-
-      const safeMaxXp = Number.isFinite(profile.maxXp) ? Math.max(1, Math.floor(profile.maxXp)) : ship.maxXp;
-      const safeXp = Number.isFinite(profile.xp)
-        ? Math.max(0, Math.min(safeMaxXp, Math.floor(profile.xp)))
-        : ship.xp;
-
-      ship.maxXp = safeMaxXp;
-      ship.xp = safeXp;
-
-      socket.emit('profileLoaded', {
-        username: profile.username,
-        xp: ship.xp,
-        maxXp: ship.maxXp,
-        starsCollected: profile.starsCollected,
-        gamesPlayed: profile.gamesPlayed
-      });
-    });
+        })
+        .catch((err) => {
+          console.warn('⚠️ Failed to load profile for', username, err);
+          socket.data.profileLoaded = true;
+        });
+    }
 
     // Handle class selection from client
     socket.on('chooseClass', (payload) => {
