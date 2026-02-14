@@ -176,6 +176,12 @@ jobs:
             exit 1
           fi
 
+          echo "⏳ Running prisma db push to sync schema..."
+          docker exec "$APP_CID" sh -c \
+            "DATABASE_URL=\"postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-orbitfall}?schema=public\" npx prisma db push --skip-generate" \
+            && echo "✅ Prisma schema synced" \
+            || { echo "❌ prisma db push failed"; compose -p "${{ env.CONTAINER_NAME }}" logs --tail 200 app || true; exit 1; }
+
           echo "⏳ Waiting for app to be running..."
           for i in $(seq 1 30); do
             status="$(docker inspect -f '{{.State.Status}}' "$APP_CID" 2>/dev/null || echo missing)"
