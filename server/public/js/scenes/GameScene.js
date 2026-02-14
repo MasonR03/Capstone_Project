@@ -36,6 +36,9 @@ class GameScene extends Phaser.Scene {
     this.load.image('ship_hunter', GameConfig.assets.ships.hunter);
     this.load.image('ship_tanker', GameConfig.assets.ships.tanker);
 
+    // Backdrop
+    this.load.image('backdrop', GameConfig.assets.backdrop);
+
     // HUD
     this.load.image('hudBars', GameConfig.assets.hudBars);
 
@@ -59,6 +62,11 @@ class GameScene extends Phaser.Scene {
     // Set world bounds
     this.physics.world.setBounds(0, 0, WORLD_W, WORLD_H);
     this.cameras.main.setBounds(0, 0, WORLD_W, WORLD_H);
+
+    // Add tiled backdrop covering the entire world
+    this.add.tileSprite(0, 0, WORLD_W, WORLD_H, 'backdrop')
+      .setOrigin(0, 0)
+      .setDepth(-1);
 
     // Add world border visuals
     this._addWorldBorders();

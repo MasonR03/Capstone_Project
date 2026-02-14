@@ -116,7 +116,8 @@ const GameConfig = {
     },
     hudBars: 'assets/Bar.png',
     menuIn: 'assets/MenuSliderIn.png',
-    menuOut: 'assets/MenuSliderOut.png'
+    menuOut: 'assets/MenuSliderOut.png',
+    backdrop: 'assets/backdrop_tile.webp'
   }
 };
 
