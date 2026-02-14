@@ -178,7 +178,7 @@ jobs:
 
           echo "⏳ Running prisma db push to sync schema..."
           docker exec "$APP_CID" sh -c \
-            "DATABASE_URL=\"postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-orbitfall}?schema=public\" npx prisma db push --skip-generate" \
+            "DATABASE_URL=\"postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-orbitfall}?schema=public\" npx prisma db push --skip-generate --accept-data-loss" \
             && echo "✅ Prisma schema synced" \
             || { echo "❌ prisma db push failed"; compose -p "${{ env.CONTAINER_NAME }}" logs --tail 200 app || true; exit 1; }
 
