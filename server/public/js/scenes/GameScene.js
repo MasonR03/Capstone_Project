@@ -11,6 +11,7 @@ import networkManager from '../managers/NetworkManager.js';
 import inputManager from '../managers/InputManager.js';
 import uiManager from '../managers/UIManager.js';
 import ClientEntityManager from '../managers/ClientEntityManager.js';
+import ShootingStarRenderer from '../managers/ShootingStarRenderer.js';
 
 class GameScene extends Phaser.Scene {
   constructor() {
@@ -36,6 +37,9 @@ class GameScene extends Phaser.Scene {
     this.load.image('ship_hunter', GameConfig.assets.ships.hunter);
     this.load.image('ship_tanker', GameConfig.assets.ships.tanker);
 
+    // Backdrop
+    this.load.image('backdrop', GameConfig.assets.backdrop);
+
     // HUD
     this.load.image('hudBars', GameConfig.assets.hudBars);
 
@@ -59,6 +63,25 @@ class GameScene extends Phaser.Scene {
     // Set world bounds
     this.physics.world.setBounds(0, 0, WORLD_W, WORLD_H);
     this.cameras.main.setBounds(0, 0, WORLD_W, WORLD_H);
+
+    // Generate soft glow particle texture for ship trails
+    const glowCanvas = this.textures.createCanvas('glow_particle', 32, 32);
+    const ctx = glowCanvas.getContext();
+    const gradient = ctx.createRadialGradient(16, 16, 0, 16, 16, 16);
+    gradient.addColorStop(0, 'rgba(255, 255, 255, 1)');
+    gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, 32, 32);
+    glowCanvas.refresh();
+
+    // Add tiled backdrop covering the entire world
+    this.add.tileSprite(0, 0, WORLD_W, WORLD_H, 'backdrop')
+      .setOrigin(0, 0)
+      .setDepth(-1);
+
+    // Shooting star renderer
+    this.shootingStars = new ShootingStarRenderer(this, networkManager.getSocket());
+    this.shootingStars.init();
 
     // Add world border visuals
     this._addWorldBorders();
@@ -106,6 +129,9 @@ class GameScene extends Phaser.Scene {
    * Update loop
    */
   update(time, delta) {
+    // Shooting stars run regardless of game state
+    this.shootingStars.update(delta);
+
     // Don't process until class is chosen
     if (!gameState.isClassChosen()) return;
 

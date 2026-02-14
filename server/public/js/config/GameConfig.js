@@ -44,8 +44,9 @@ const GameConfig = {
   shipPhysics: {
     maxSpeed: 400,
     acceleration: 200,
-    angularSpeed: 300 * (Math.PI / 180), // 5.236 rad/s
-    dragFactor: 0.98
+    angularSpeed: 420 * (Math.PI / 180), // 7.33 rad/s
+    dragFactor: 0.98,
+    gripFactor: 0.2 // lateral velocity dampening per frame (0=spaceship, higher=car-like)
   },
 
   // Movement sync
@@ -116,7 +117,8 @@ const GameConfig = {
     },
     hudBars: 'assets/Bar.png',
     menuIn: 'assets/MenuSliderIn.png',
-    menuOut: 'assets/MenuSliderOut.png'
+    menuOut: 'assets/MenuSliderOut.png',
+    backdrop: 'assets/backdrop_tile.webp'
   }
 };
 
