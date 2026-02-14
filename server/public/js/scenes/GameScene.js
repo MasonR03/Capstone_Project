@@ -78,6 +78,51 @@ class GameScene extends Phaser.Scene {
       .setOrigin(0, 0)
       .setDepth(-1);
 
+    // Generate colored glow textures for shooting stars
+    const starGlowDefs = {
+      white:  [255, 255, 255],
+      blue:   [160, 190, 255],
+      purple: [210, 160, 255],
+      red:    [255, 160, 160],
+      yellow: [255, 240, 170],
+      orange: [255, 190, 130]
+    };
+
+    Object.entries(starGlowDefs).forEach(([name, rgb]) => {
+      const c = this.textures.createCanvas(`star_${name}`, 32, 32);
+      const cx = c.getContext();
+      const g = cx.createRadialGradient(16, 16, 0, 16, 16, 16);
+      g.addColorStop(0, `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, 1)`);
+      g.addColorStop(1, `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, 0)`);
+      cx.fillStyle = g;
+      cx.fillRect(0, 0, 32, 32);
+      c.refresh();
+    });
+
+    // Create one emitter per color, all behind game objects above backdrop
+    const starKeys = Object.keys(starGlowDefs);
+    let _starScale = 0.4;
+    this._starEmitters = starKeys.map((name) => {
+      const particles = this.add.particles(`star_${name}`);
+      particles.setDepth(-0.5);
+      return particles.createEmitter({
+        speed: { min: 0, max: 5 },
+        scale: { start: 0.4, end: 0 },
+        alpha: { start: 0.7, end: 0 },
+        lifespan: 1800,
+        blendMode: 'ADD',
+        frequency: -1,
+        emitCallback: (particle) => {
+          particle.scaleX = _starScale;
+          particle.scaleY = _starScale;
+        }
+      });
+    });
+    this._starScale = _starScale;
+    this._setStarScale = (s) => { _starScale = s; };
+    this._activeStars = [];
+    this._starSpawnTimer = 0;
+
     // Add world border visuals
     this._addWorldBorders();
 
@@ -124,6 +169,9 @@ class GameScene extends Phaser.Scene {
    * Update loop
    */
   update(time, delta) {
+    // Shooting stars run regardless of game state
+    this._updateShootingStars(delta);
+
     // Don't process until class is chosen
     if (!gameState.isClassChosen()) return;
 
@@ -178,6 +226,129 @@ class GameScene extends Phaser.Scene {
     this.add.rectangle(borderWidth / 2, WORLD_H / 2, borderWidth, WORLD_H, borderColor).setDepth(0);
     // Right
     this.add.rectangle(WORLD_W - borderWidth / 2, WORLD_H / 2, borderWidth, WORLD_H, borderColor).setDepth(0);
+  }
+
+  /**
+   * Update shooting stars — spawn outside map, travel across, remove on exit
+   * @private
+   */
+  _updateShootingStars(delta) {
+    const WORLD_W = GameConfig.world.width;
+    const WORLD_H = GameConfig.world.height;
+    const margin = 100;
+    const emitInterval = 40;
+    const spawnInterval = 1000;
+
+    // Spawn new stars
+    this._starSpawnTimer += delta;
+    if (this._starSpawnTimer >= spawnInterval) {
+      this._starSpawnTimer -= spawnInterval;
+
+      let startX, startY, angleRad;
+
+      if (Math.random() < 0.2) {
+        // 20% spawn inside the map, random direction
+        startX = Phaser.Math.Between(100, WORLD_W - 100);
+        startY = Phaser.Math.Between(100, WORLD_H - 100);
+        angleRad = Phaser.Math.FloatBetween(0, 360) * (Math.PI / 180);
+      } else {
+        // 80% spawn outside an edge, angled inward
+        const edge = Phaser.Math.Between(0, 3);
+        let minAngle, maxAngle;
+
+        switch (edge) {
+          case 0: // top
+            startX = Phaser.Math.Between(0, WORLD_W);
+            startY = -margin;
+            minAngle = 30; maxAngle = 150;
+            break;
+          case 1: // right
+            startX = WORLD_W + margin;
+            startY = Phaser.Math.Between(0, WORLD_H);
+            minAngle = 120; maxAngle = 240;
+            break;
+          case 2: // bottom
+            startX = Phaser.Math.Between(0, WORLD_W);
+            startY = WORLD_H + margin;
+            minAngle = 210; maxAngle = 330;
+            break;
+          case 3: // left
+            startX = -margin;
+            startY = Phaser.Math.Between(0, WORLD_H);
+            minAngle = -60; maxAngle = 60;
+            break;
+        }
+
+        angleRad = Phaser.Math.FloatBetween(minAngle, maxAngle) * (Math.PI / 180);
+      }
+      const speed = Phaser.Math.FloatBetween(15, 120);
+      const emitters = this._starEmitters;
+      const baseScale = Math.random() < 0.1
+        ? Phaser.Math.FloatBetween(0.4, 0.7)
+        : Phaser.Math.FloatBetween(0.1, 0.25);
+
+      this._activeStars.push({
+        x: startX,
+        y: startY,
+        vx: Math.cos(angleRad) * speed,
+        vy: Math.sin(angleRad) * speed,
+        emitter: emitters[Math.floor(Math.random() * emitters.length)],
+        scale: baseScale,
+        baseScale: baseScale,
+        fades: Math.random() < 0.5,
+        age: 0,
+        // ~30% of stars curve; angular velocity in rad/s
+        angularV: Math.random() < 0.6
+          ? Phaser.Math.FloatBetween(-0.5, 0.5)
+          : 0,
+        emitTimer: 0
+      });
+    }
+
+    // Update active stars
+    for (let i = this._activeStars.length - 1; i >= 0; i--) {
+      const star = this._activeStars[i];
+      star.emitTimer += delta;
+
+      while (star.emitTimer >= emitInterval) {
+        star.emitTimer -= emitInterval;
+        const dt = emitInterval / 1000;
+        star.age += dt;
+
+        // Apply curve — rotate velocity vector
+        if (star.angularV !== 0) {
+          const cos = Math.cos(star.angularV * dt);
+          const sin = Math.sin(star.angularV * dt);
+          const nvx = star.vx * cos - star.vy * sin;
+          const nvy = star.vx * sin + star.vy * cos;
+          star.vx = nvx;
+          star.vy = nvy;
+        }
+
+        star.x += star.vx * dt;
+        star.y += star.vy * dt;
+
+        // Remove if outside map bounds
+        if (star.x < -margin || star.x > WORLD_W + margin ||
+            star.y < -margin || star.y > WORLD_H + margin) {
+          this._activeStars.splice(i, 1);
+          break;
+        }
+
+        // Fading stars shrink and dim over time
+        if (star.fades) {
+          const fadeT = Math.min(star.age / 15, 1); // fully faded by 15s
+          star.scale = star.baseScale * (1 - fadeT);
+          if (star.scale < 0.02) {
+            this._activeStars.splice(i, 1);
+            break;
+          }
+        }
+
+        this._setStarScale(star.scale);
+        star.emitter.emitParticleAt(star.x, star.y, 1);
+      }
+    }
   }
 
   /**
