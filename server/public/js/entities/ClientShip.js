@@ -55,8 +55,9 @@ class ClientShip {
     this.stats = {
       maxSpeed: classConfig.stats.speed || 400,
       acceleration: classConfig.stats.accel || 200,
-      angularSpeed: 300 * (Math.PI / 180), // 5.236 rad/s
-      dragFactor: 0.98
+      angularSpeed: GameConfig.shipPhysics.angularSpeed,
+      dragFactor: GameConfig.shipPhysics.dragFactor,
+      gripFactor: GameConfig.shipPhysics.gripFactor
     };
 
     // World bounds from config
@@ -286,6 +287,22 @@ class ClientShip {
         this.predicted.vx = 0;
         this.predicted.vy = 0;
       }
+    }
+
+    // Car-like steering: redirect velocity toward facing direction
+    const currentSpeed = Math.sqrt(this.predicted.vx ** 2 + this.predicted.vy ** 2);
+    if (currentSpeed > 1) {
+      const facingAngle = this.predicted.rotation + 1.5;
+      const facingX = Math.cos(facingAngle);
+      const facingY = Math.sin(facingAngle);
+
+      const forwardSpeed = this.predicted.vx * facingX + this.predicted.vy * facingY;
+      const lateralX = this.predicted.vx - forwardSpeed * facingX;
+      const lateralY = this.predicted.vy - forwardSpeed * facingY;
+
+      const gripPerFrame = 1 - Math.pow(1 - this.stats.gripFactor, dt * 60);
+      this.predicted.vx -= lateralX * gripPerFrame;
+      this.predicted.vy -= lateralY * gripPerFrame;
     }
 
     // Clamp velocity to max

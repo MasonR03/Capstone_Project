@@ -19,8 +19,9 @@ class Ship {
     this.stats = {
       maxSpeed: config.maxSpeed || 400,
       acceleration: config.acceleration || 200,
-      angularSpeed: config.angularSpeed || (300 * (Math.PI / 180)), // 5.236 rad/s
+      angularSpeed: config.angularSpeed || (420 * (Math.PI / 180)), // 7.33 rad/s
       dragFactor: config.dragFactor || 0.98,
+      gripFactor: config.gripFactor || 0.2, // lateral velocity dampening per frame (0=spaceship, higher=car-like)
     };
 
     // Combat/progression stats
@@ -113,6 +114,25 @@ class Ship {
         // Snap to zero when nearly stopped to prevent micro-drifting
         this.body.setVelocity(0, 0);
       }
+    }
+
+    // Car-like steering: redirect velocity toward facing direction
+    const speed = this.body.velocity.length();
+    if (speed > 1) {
+      const facingAngle = this.body.rotation + 1.5;
+      const facingX = Math.cos(facingAngle);
+      const facingY = Math.sin(facingAngle);
+
+      // Decompose velocity into forward and lateral components
+      const forwardSpeed = this.body.velocity.x * facingX + this.body.velocity.y * facingY;
+      const lateralX = this.body.velocity.x - forwardSpeed * facingX;
+      const lateralY = this.body.velocity.y - forwardSpeed * facingY;
+
+      // Dampen lateral velocity for grip
+      this.body.setVelocity(
+        this.body.velocity.x - lateralX * this.stats.gripFactor,
+        this.body.velocity.y - lateralY * this.stats.gripFactor
+      );
     }
 
     // Bounds checking with buffer
