@@ -141,8 +141,8 @@ class ClientShip {
 
     this.trailEmitter = this.trailParticles.createEmitter({
       speed: { min: 5, max: 20 },
-      scale: { start: 0.25, end: 0 },
-      alpha: { start: 0.35, end: 0 },
+      scale: { start: 0.5, end: 0 },
+      alpha: { start: 0.7, end: 0 },
       lifespan: 500,
       blendMode: 'ADD',
       frequency: 40,
