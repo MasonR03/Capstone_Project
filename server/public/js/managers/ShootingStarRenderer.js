@@ -19,6 +19,7 @@ const STAR_GLOW_DEFS = {
 const EMIT_INTERVAL = 40;
 const MARGIN = 100;
 const MAX_LIFETIME = 60; // seconds
+const MAX_ACTIVE_STARS = 20;
 
 class ShootingStarRenderer {
   /**
@@ -137,6 +138,7 @@ class ShootingStarRenderer {
 
   _registerSocketHandler() {
     this._socket.on('shootingStar', (data) => {
+      if (this._activeStars.length >= MAX_ACTIVE_STARS) return;
       const emitter = this._emittersByColor[data.color];
       if (!emitter) return;
       this._activeStars.push({
