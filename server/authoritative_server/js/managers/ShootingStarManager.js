@@ -5,7 +5,7 @@
  */
 
 const COLORS = ['white', 'blue', 'purple', 'red', 'yellow', 'orange'];
-const SPAWN_INTERVAL = 1000; // ms
+const SPAWN_INTERVAL = 5000; // ms
 const MARGIN = 100;
 
 class ShootingStarManager {
