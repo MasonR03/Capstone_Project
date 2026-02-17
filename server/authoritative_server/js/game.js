@@ -93,7 +93,7 @@ function initializeServer(io) {
 
     const classConfig = SHIP_CLASSES[DEFAULT_CLASS];
     const ship = entityManager.createShip(socket.id, startX, startY, {
-      team: Math.random() < 0.5 ? 'red' : 'blue',
+      team: 'neutral',
       classKey: DEFAULT_CLASS,
       maxSpeed: classConfig.speed,
       acceleration: classConfig.accel,

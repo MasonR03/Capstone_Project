@@ -21,8 +21,6 @@ const getConfig = () => {
       colors: {
         border: 0x00ffff,
         myDot: 0x00e5ff,
-        redDot: 0xff6666,
-        blueDot: 0x6688ff,
         otherDot: 0xffffff
       }
     }
@@ -198,16 +196,7 @@ class Minimap {
     // Players
     for (const id in players) {
       const p = players[id];
-      let color;
-      if (id === myId) {
-        color = this.colors.myDot;
-      } else if (p.team === 'red') {
-        color = this.colors.redDot;
-      } else if (p.team === 'blue') {
-        color = this.colors.blueDot;
-      } else {
-        color = this.colors.otherDot;
-      }
+      const color = id === myId ? this.colors.myDot : this.colors.otherDot;
       this._plot(p.x - me.x, p.y - me.y, color, id === myId ? 4 : 3.2);
     }
 

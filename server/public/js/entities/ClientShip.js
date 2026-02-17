@@ -136,10 +136,6 @@ class ClientShip {
     this.trailParticles = scene.add.particles('glow_particle');
     this.trailParticles.setDepth(0);
 
-    let tint = 0x00ffff;
-    if (this.team === 'red') tint = 0xff6666;
-    else if (this.team === 'blue') tint = 0x6688ff;
-
     this.trailEmitter = this.trailParticles.createEmitter({
       speed: { min: 5, max: 20 },
       scale: { start: 0.5, end: 0 },
@@ -147,7 +143,7 @@ class ClientShip {
       lifespan: 500,
       blendMode: 'ADD',
       frequency: 40,
-      tint: tint,
+      tint: 0x00ffff,
       follow: this.sprite
     });
   }
@@ -157,12 +153,7 @@ class ClientShip {
    */
   _applyTeamTint() {
     if (!this.sprite) return;
-
-    if (this.team === 'red') {
-      this.sprite.setTint(0xff4444);
-    } else if (this.team === 'blue') {
-      this.sprite.setTint(0x4444ff);
-    }
+    this.sprite.clearTint();
   }
 
   /**

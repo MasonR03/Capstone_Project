@@ -72,8 +72,6 @@ const GameConfig = {
     colors: {
       border: 0x00ffff,
       myDot: 0x00e5ff,
-      redDot: 0xff6666,
-      blueDot: 0x6688ff,
       otherDot: 0xffffff
     }
   },
