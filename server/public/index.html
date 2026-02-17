@@ -43,6 +43,23 @@
       #debug-button:hover {
         background: rgba(0, 255, 255, 0.3);
       }
+      #stats-button {
+        position: absolute;
+        top: 70px;
+        left: 20px;
+        padding: 10px 20px;
+        background: rgba(0, 255, 255, 0.2);
+        border: 2px solid #00ffff;
+        color: #00ffff;
+        cursor: pointer;
+        font-family: monospace;
+        font-size: 14px;
+        display: none;
+        z-index: 1000;
+      }
+      #stats-button:hover {
+        background: rgba(0, 255, 255, 0.3);
+      }
       #logout-button {
         position: absolute;
         top: 20px;
@@ -85,6 +102,29 @@
         padding-bottom: 5px;
       }
       #debug-panel .coord {
+        margin: 5px 0;
+      }
+      #stats-panel {
+        position: absolute;
+        top: 120px;
+        left: 20px;
+        padding: 15px;
+        background: rgba(0, 0, 0, 0.9);
+        border: 2px solid #00ffff;
+        color: #00ffff;
+        font-family: 'Orbitron', sans-serif;
+        font-size: 14px;
+        display: none;
+        z-index: 1000;
+        min-width: 220px;
+      }
+      #stats-panel h3 {
+        margin: 0 0 10px 0;
+        font-size: 16px;
+        border-bottom: 1px solid #00ffff;
+        padding-bottom: 5px;
+      }
+      #stats-panel .coord {
         margin: 5px 0;
       }
 
@@ -447,7 +487,20 @@
       <div id="game-container"></div>
     </div>
     <button id="logout-button">Logout</button>
+    <button id="stats-button">Stats</button>
     <button id="debug-button">Debug Tools</button>
+    <div id="stats-panel">
+      <h3>Player Stats (DB)</h3>
+      <div class="coord">Username: <span id="stats-username">-</span></div>
+      <div class="coord">Email: <span id="stats-email">-</span></div>
+      <div class="coord">XP: <span id="stats-xp">-</span></div>
+      <div class="coord">Stars: <span id="stats-stars">-</span></div>
+      <div class="coord">Games: <span id="stats-games">-</span></div>
+      <div class="coord">Last Seen: <span id="stats-last-seen">-</span></div>
+      <div class="coord">Created: <span id="stats-created">-</span></div>
+      <div class="coord">Updated: <span id="stats-updated">-</span></div>
+      <div class="coord" id="stats-status-line">Status: <span id="stats-status">idle</span></div>
+    </div>
     <div id="debug-panel">
       <h3>Debug Info</h3>
       <div class="coord">Players: <span id="player-count">0</span></div>
