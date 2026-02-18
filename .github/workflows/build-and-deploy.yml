@@ -46,19 +46,174 @@ jobs:
     environment: production
 
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Log in to Docker Hub
         run: echo ${{ secrets.DOCKERHUB_TOKEN }} | docker login -u ${{ secrets.DOCKERHUB_USERNAME }} --password-stdin
 
-      - name: Pull and start container
+      - name: Pull and start stack (app + db)
+        env:
+          APP_IMAGE: ${{ env.IMAGE_NAME }}:${{ github.sha }}
+          HOST_PORT: ${{ env.HOST_PORT }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          RESET_DB_ON_REBOOT: ${{ vars.RESET_DB_ON_REBOOT }}
         run: |
           docker pull ${{ env.IMAGE_NAME }}:${{ github.sha }}
-          if [ "$(docker ps -q -f name=${{ env.CONTAINER_NAME }})" ]; then
-            docker stop ${{ env.CONTAINER_NAME }}
+          ORBITFALL_DIR="$HOME/orbitfall"
+          export ORBITFALL_DIR
+          mkdir -p "$ORBITFALL_DIR/postgres"
+
+          cp -f docker-compose.yml "$ORBITFALL_DIR/docker-compose.yml"
+          cp -f postgres/init.sql "$ORBITFALL_DIR/postgres/init.sql"
+          cp -f scripts/reset-db-on-reboot.sh "$ORBITFALL_DIR/reset-db-on-reboot.sh"
+          chmod +x "$ORBITFALL_DIR/reset-db-on-reboot.sh"
+
+          # Compose reads `.env` automatically from the working directory.
+          printf "APP_IMAGE=%s\nHOST_PORT=%s\nPOSTGRES_PASSWORD=%s\nINIT_SQL_PATH=%s\n" \
+            "$APP_IMAGE" \
+            "$HOST_PORT" \
+            "$POSTGRES_PASSWORD" \
+            "$ORBITFALL_DIR/postgres/init.sql" \
+            > "$ORBITFALL_DIR/.env"
+
+          cd "$ORBITFALL_DIR"
+
+          if docker compose version >/dev/null 2>&1; then
+            compose() { docker compose "$@"; }
+          else
+            compose() { docker-compose "$@"; }
           fi
-          if [ "$(docker ps -aq -f name=${{ env.CONTAINER_NAME }})" ]; then
-            docker rm ${{ env.CONTAINER_NAME }}
+
+          # Transition: remove legacy single-container deploy (if present)
+          docker rm -f "${{ env.CONTAINER_NAME }}" 2>/dev/null || true
+
+          compose -p "${{ env.CONTAINER_NAME }}" down || true
+          compose -p "${{ env.CONTAINER_NAME }}" up -d --no-build
+
+          # Optional: wipe DB on host reboot (ephemeral environments only).
+          if [ "${RESET_DB_ON_REBOOT:-0}" = "1" ]; then
+            echo "🔁 Installing reboot DB reset hook (this wipes all player stats on reboot)"
+
+            install_reboot_hook() {
+              local stack_name="$1"
+              local log_file="$ORBITFALL_DIR/reboot-reset.log"
+
+              if command -v crontab >/dev/null 2>&1; then
+                local cron_line
+                cron_line="@reboot ORBITFALL_DIR=$ORBITFALL_DIR $ORBITFALL_DIR/reset-db-on-reboot.sh $stack_name >> $log_file 2>&1"
+                (crontab -l 2>/dev/null | grep -v "reset-db-on-reboot.sh" || true; echo "$cron_line") | crontab -
+                echo "✅ Installed via crontab"
+                return 0
+              fi
+
+              if command -v systemctl >/dev/null 2>&1 && command -v sudo >/dev/null 2>&1; then
+                if sudo -n true >/dev/null 2>&1; then
+                  local svc_name="orbitfall-reset-db-${stack_name}.service"
+                  printf "%s\n" \
+                    "[Unit]" \
+                    "Description=Orbitfall reset DB volume on reboot (${stack_name})" \
+                    "After=docker.service" \
+                    "Wants=docker.service" \
+                    "" \
+                    "[Service]" \
+                    "Type=oneshot" \
+                    "Environment=ORBITFALL_DIR=${ORBITFALL_DIR}" \
+                    "ExecStart=${ORBITFALL_DIR}/reset-db-on-reboot.sh ${stack_name}" \
+                    "" \
+                    "[Install]" \
+                    "WantedBy=multi-user.target" \
+                    > "$ORBITFALL_DIR/$svc_name"
+                  sudo cp -f "$ORBITFALL_DIR/$svc_name" "/etc/systemd/system/$svc_name"
+                  sudo systemctl daemon-reload
+                  sudo systemctl enable "$svc_name"
+                  echo "✅ Installed via systemd ($svc_name)"
+                  return 0
+                fi
+              fi
+
+              echo "⚠️ Could not install reboot hook: missing crontab and/or sudo/systemd permissions."
+              echo "   You can install cronie/cron, or enable via systemd manually using $ORBITFALL_DIR/reset-db-on-reboot.sh."
+              return 0
+            }
+
+            install_reboot_hook "${{ env.CONTAINER_NAME }}"
+          else
+            echo "ℹ️ RESET_DB_ON_REBOOT not enabled; leaving DB persistent across reboots."
           fi
-          docker run -d \
-            --name ${{ env.CONTAINER_NAME }} \
-            -p ${{ env.HOST_PORT }}:${{ env.CONTAINER_PORT }} \
-            ${{ env.IMAGE_NAME }}:${{ github.sha }}
+
+          compose -p "${{ env.CONTAINER_NAME }}" ps
+
+          DB_CID="$(compose -p "${{ env.CONTAINER_NAME }}" ps -q db)"
+          APP_CID="$(compose -p "${{ env.CONTAINER_NAME }}" ps -q app)"
+
+          if [ -z "$DB_CID" ] || [ -z "$APP_CID" ]; then
+            echo "❌ Expected db/app containers were not created."
+            compose -p "${{ env.CONTAINER_NAME }}" ps || true
+            compose -p "${{ env.CONTAINER_NAME }}" logs --tail 200 || true
+            exit 1
+          fi
+
+          echo "⏳ Waiting for db to become healthy..."
+          for i in $(seq 1 60); do
+            health="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$DB_CID" 2>/dev/null || echo unknown)"
+            if [ "$health" = "healthy" ]; then
+              echo "✅ db is healthy"
+              break
+            fi
+            if [ "$health" = "unhealthy" ]; then
+              echo "❌ db is unhealthy"
+              compose -p "${{ env.CONTAINER_NAME }}" logs --tail 200 db || true
+              exit 1
+            fi
+            sleep 2
+          done
+
+          health="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$DB_CID" 2>/dev/null || echo unknown)"
+          if [ "$health" != "healthy" ]; then
+            echo "❌ Timed out waiting for db health (status: $health)"
+            compose -p "${{ env.CONTAINER_NAME }}" logs --tail 200 db || true
+            exit 1
+          fi
+
+          echo "⏳ Waiting for app to be running..."
+          for i in $(seq 1 30); do
+            status="$(docker inspect -f '{{.State.Status}}' "$APP_CID" 2>/dev/null || echo missing)"
+            if [ "$status" = "running" ]; then
+              echo "✅ app is running"
+              break
+            fi
+            if [ "$status" = "exited" ] || [ "$status" = "dead" ]; then
+              echo "❌ app is not running (status: $status)"
+              compose -p "${{ env.CONTAINER_NAME }}" logs --tail 200 app || true
+              exit 1
+            fi
+            sleep 2
+          done
+
+          status="$(docker inspect -f '{{.State.Status}}' "$APP_CID" 2>/dev/null || echo missing)"
+          if [ "$status" != "running" ]; then
+            echo "❌ Timed out waiting for app to be running (status: $status)"
+            compose -p "${{ env.CONTAINER_NAME }}" logs --tail 200 app || true
+            exit 1
+          fi
+
+          echo "⏳ Waiting for Prisma to connect to the database..."
+          for i in $(seq 1 60); do
+            if docker logs "$APP_CID" 2>/dev/null | grep -q "✅ Database connected (Prisma)"; then
+              echo "✅ Prisma connected"
+              exit 0
+            fi
+            if docker logs "$APP_CID" 2>/dev/null | grep -q "Database connection failed"; then
+              echo "❌ Prisma reported a DB connection failure"
+              compose -p "${{ env.CONTAINER_NAME }}" logs --tail 200 app || true
+              compose -p "${{ env.CONTAINER_NAME }}" logs --tail 200 db || true
+              exit 1
+            fi
+            sleep 2
+          done
+
+          echo "❌ Timed out waiting for Prisma to connect"
+          compose -p "${{ env.CONTAINER_NAME }}" logs --tail 200 app || true
+          compose -p "${{ env.CONTAINER_NAME }}" logs --tail 200 db || true
+          exit 1

@@ -1,0 +1,48 @@
+@startuml
+skinparam classAttributeIconSize 0
+skinparam shadowing false
+skinparam packageStyle rectangle
+
+package "Client Objects" {
+  class ClientEntityManager
+  class ClientShip
+  class GameScene
+  class NetworkManager
+  class GameStateManager
+
+  GameScene --> ClientEntityManager
+  GameScene --> NetworkManager
+  GameScene --> GameStateManager
+
+  ClientEntityManager "1" o-- "many" ClientShip
+}
+
+package "Server Objects" {
+  class EntityManager
+  class Ship
+  class DefaultShip
+
+  EntityManager "1" o-- "many" Ship
+  DefaultShip --|> Ship
+}
+
+ClientShip ..> Ship : mirrors serialized state
+NetworkManager ..> EntityManager : playerInput
+GameStateManager ..> EntityManager : currentPlayers/playerUpdates
+
+note right of ClientShip
+  Interpolation for remote ships.
+  Prediction + reconcile for local.
+end note
+
+note right of Ship
+  Physics body owned by arcade-physics.
+  applyMovement() uses input.
+end note
+
+note bottom of EntityManager
+  Creates DefaultShip per socket.id
+  and serializes all ships each tick.
+end note
+
+@enduml

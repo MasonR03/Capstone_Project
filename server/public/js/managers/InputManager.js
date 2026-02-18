@@ -20,12 +20,20 @@ class InputManager {
   init(scene) {
     this.scene = scene;
 
-    // Set up movement keys
+    // Set up movement keys (arrows)
     this.cursors = scene.input.keyboard.addKeys({
       left: Phaser.Input.Keyboard.KeyCodes.LEFT,
       right: Phaser.Input.Keyboard.KeyCodes.RIGHT,
       up: Phaser.Input.Keyboard.KeyCodes.UP,
       down: Phaser.Input.Keyboard.KeyCodes.DOWN
+    });
+
+    // WASD keys
+    this.wasd = scene.input.keyboard.addKeys({
+      left: Phaser.Input.Keyboard.KeyCodes.A,
+      right: Phaser.Input.Keyboard.KeyCodes.D,
+      up: Phaser.Input.Keyboard.KeyCodes.W,
+      down: Phaser.Input.Keyboard.KeyCodes.S
     });
 
     // Fullscreen toggle
@@ -71,10 +79,10 @@ class InputManager {
     }
 
     return {
-      left: !!this.cursors.left.isDown,
-      right: !!this.cursors.right.isDown,
-      up: !!this.cursors.up.isDown,
-      down: !!this.cursors.down.isDown
+      left: !!this.cursors.left.isDown || !!this.wasd.left.isDown,
+      right: !!this.cursors.right.isDown || !!this.wasd.right.isDown,
+      up: !!this.cursors.up.isDown || !!this.wasd.up.isDown,
+      down: !!this.cursors.down.isDown || !!this.wasd.down.isDown
     };
   }
 
@@ -157,6 +165,7 @@ class InputManager {
       this.scene.input.keyboard.off('keydown-F');
     }
     this.cursors = null;
+    this.wasd = null;
     this.scene = null;
     this.enabled = false;
   }

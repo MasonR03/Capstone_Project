@@ -43,6 +43,44 @@
       #debug-button:hover {
         background: rgba(0, 255, 255, 0.3);
       }
+      #stats-button {
+        position: absolute;
+        top: 70px;
+        left: 20px;
+        padding: 10px 20px;
+        background: rgba(0, 255, 255, 0.2);
+        border: 2px solid #00ffff;
+        color: #00ffff;
+        cursor: pointer;
+        font-family: monospace;
+        font-size: 14px;
+        display: none;
+        z-index: 1000;
+      }
+      #stats-button:hover {
+        background: rgba(0, 255, 255, 0.3);
+      }
+      #logout-button {
+        position: absolute;
+        top: 20px;
+        left: 20px;
+        padding: 8px 16px;
+        background: rgba(255, 50, 50, 0.15);
+        border: 2px solid #ff4444;
+        color: #ff4444;
+        cursor: pointer;
+        font-family: 'Orbitron', sans-serif;
+        font-size: 12px;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+        z-index: 1000;
+        display: none;
+        transition: all 0.3s ease;
+      }
+      #logout-button:hover {
+        background: rgba(255, 50, 50, 0.3);
+        box-shadow: 0 0 10px rgba(255, 68, 68, 0.4);
+      }
       #debug-panel {
         position: absolute;
         top: 70px;
@@ -64,6 +102,29 @@
         padding-bottom: 5px;
       }
       #debug-panel .coord {
+        margin: 5px 0;
+      }
+      #stats-panel {
+        position: absolute;
+        top: 120px;
+        left: 20px;
+        padding: 15px;
+        background: rgba(0, 0, 0, 0.9);
+        border: 2px solid #00ffff;
+        color: #00ffff;
+        font-family: 'Orbitron', sans-serif;
+        font-size: 14px;
+        display: none;
+        z-index: 1000;
+        min-width: 220px;
+      }
+      #stats-panel h3 {
+        margin: 0 0 10px 0;
+        font-size: 16px;
+        border-bottom: 1px solid #00ffff;
+        padding-bottom: 5px;
+      }
+      #stats-panel .coord {
         margin: 5px 0;
       }
 
@@ -227,6 +288,138 @@
       opacity: 0.5;
       cursor: not-allowed;
     }
+
+    /* Auth tabs */
+    .auth-tabs {
+      display: flex;
+      width: 100%;
+      gap: 0;
+    }
+
+    .auth-tab {
+      flex: 1;
+      padding: 10px;
+      font-family: 'Orbitron', sans-serif;
+      font-size: 14px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      background: transparent;
+      border: 2px solid rgba(0, 255, 255, 0.3);
+      color: rgba(0, 255, 255, 0.5);
+      cursor: pointer;
+      transition: all 0.3s ease;
+    }
+
+    .auth-tab:first-child {
+      border-radius: 4px 0 0 4px;
+    }
+
+    .auth-tab:last-child {
+      border-radius: 0 4px 4px 0;
+    }
+
+    .auth-tab.active {
+      background: rgba(0, 255, 255, 0.15);
+      border-color: #00ffff;
+      color: #00ffff;
+    }
+
+    .auth-tab:hover:not(.active) {
+      background: rgba(0, 255, 255, 0.05);
+      border-color: rgba(0, 255, 255, 0.6);
+      color: rgba(0, 255, 255, 0.8);
+    }
+
+    .auth-panel {
+      display: none;
+      width: 100%;
+    }
+
+    .auth-panel.active {
+      display: block;
+    }
+
+    .auth-error {
+      color: #ff4444;
+      font-family: 'Orbitron', sans-serif;
+      font-size: 12px;
+      letter-spacing: 1px;
+      text-align: center;
+      min-height: 18px;
+      margin-top: 4px;
+    }
+
+    /* Password field wrapper with toggle */
+    .password-wrap {
+      position: relative;
+      display: flex;
+    }
+
+    .password-wrap input {
+      flex: 1;
+      padding-right: 44px;
+    }
+
+    .login-form button.pw-toggle {
+      all: unset;
+      position: absolute;
+      right: 8px;
+      top: 50%;
+      transform: translateY(-50%);
+      cursor: pointer;
+      width: 28px;
+      height: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: rgba(0, 255, 255, 0.5);
+      transition: color 0.2s;
+    }
+
+    .login-form button.pw-toggle svg {
+      width: 20px;
+      height: 20px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      pointer-events: none;
+    }
+
+    .login-form button.pw-toggle:hover {
+      color: #00ffff;
+    }
+
+    /* Password requirements checklist */
+    .pw-requirements {
+      list-style: none;
+      padding: 0;
+      margin: 2px 0 0 0;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px 12px;
+    }
+
+    .pw-requirements li {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 10px;
+      letter-spacing: 0.5px;
+      color: rgba(0, 255, 255, 0.35);
+      transition: color 0.2s;
+    }
+
+    .pw-requirements li.met {
+      color: #44ff88;
+    }
+
+    .pw-requirements li::before {
+      content: '\2717 ';
+    }
+
+    .pw-requirements li.met::before {
+      content: '\2713 ';
+    }
     </style>
   </head>
 
@@ -235,19 +428,57 @@
     <div id="login-overlay">
       <div class="login-container">
         <h1 class="login-title">ORBITFALL</h1>
-        <p class="login-subtitle">Enter Your Name</p>
-        <form class="login-form" id="login-form">
-          <label for="player-name">Player Name</label>
-          <input
-            type="text"
-            id="player-name"
-            placeholder="Enter your name..."
-            maxlength="20"
-            autocomplete="off"
-            required
-          />
-          <button type="submit">Enter Game</button>
-        </form>
+        <p class="login-subtitle">Welcome, Pilot</p>
+
+        <!-- Tabs -->
+        <div class="auth-tabs">
+          <button class="auth-tab active" data-tab="login">Login</button>
+          <button class="auth-tab" data-tab="signup">Sign Up</button>
+        </div>
+
+        <!-- Login panel -->
+        <div class="auth-panel active" id="panel-login">
+          <form class="login-form" id="login-form">
+            <label for="login-username">Username or Email</label>
+            <input type="text" id="login-username" placeholder="Username or email" autocomplete="username" required />
+            <label for="login-password">Password</label>
+            <div class="password-wrap">
+              <input type="password" id="login-password" placeholder="Password" autocomplete="current-password" required />
+              <button type="button" class="pw-toggle" data-target="login-password" aria-label="Show password"><svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg></button>
+            </div>
+            <button type="submit">Login</button>
+          </form>
+        </div>
+
+        <!-- Signup panel -->
+        <div class="auth-panel" id="panel-signup">
+          <form class="login-form" id="signup-form">
+            <label for="signup-username">Username</label>
+            <input type="text" id="signup-username" placeholder="Choose a username" maxlength="20" autocomplete="username" required />
+            <label for="signup-email">Email</label>
+            <input type="email" id="signup-email" placeholder="Email address" autocomplete="email" required />
+            <label for="signup-password">Password</label>
+            <div class="password-wrap">
+              <input type="password" id="signup-password" placeholder="Password" autocomplete="new-password" required />
+              <button type="button" class="pw-toggle" data-target="signup-password" aria-label="Show password"><svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg></button>
+            </div>
+            <ul class="pw-requirements" id="pw-requirements">
+              <li data-rule="length">8+ chars</li>
+              <li data-rule="letter">1 letter</li>
+              <li data-rule="number">1 number</li>
+              <li data-rule="special">1 special</li>
+            </ul>
+            <label for="signup-confirm">Confirm Password</label>
+            <div class="password-wrap">
+              <input type="password" id="signup-confirm" placeholder="Confirm password" autocomplete="new-password" required />
+              <button type="button" class="pw-toggle" data-target="signup-confirm" aria-label="Show password"><svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg></button>
+            </div>
+            <button type="submit">Create Account</button>
+          </form>
+        </div>
+
+        <!-- Error display -->
+        <div class="auth-error" id="auth-error"></div>
       </div>
     </div>
 
@@ -255,7 +486,21 @@
       <div id="title-overlay">ORBITFALL</div>
       <div id="game-container"></div>
     </div>
+    <button id="logout-button">Logout</button>
+    <button id="stats-button">Stats</button>
     <button id="debug-button">Debug Tools</button>
+    <div id="stats-panel">
+      <h3>Player Stats (DB)</h3>
+      <div class="coord">Username: <span id="stats-username">-</span></div>
+      <div class="coord">Email: <span id="stats-email">-</span></div>
+      <div class="coord">XP: <span id="stats-xp">-</span></div>
+      <div class="coord">Stars: <span id="stats-stars">-</span></div>
+      <div class="coord">Games: <span id="stats-games">-</span></div>
+      <div class="coord">Last Seen: <span id="stats-last-seen">-</span></div>
+      <div class="coord">Created: <span id="stats-created">-</span></div>
+      <div class="coord">Updated: <span id="stats-updated">-</span></div>
+      <div class="coord" id="stats-status-line">Status: <span id="stats-status">idle</span></div>
+    </div>
     <div id="debug-panel">
       <h3>Debug Info</h3>
       <div class="coord">Players: <span id="player-count">0</span></div>

@@ -12,6 +12,7 @@ import LevelPanel from '../ui/LevelPanel.js';
 import Minimap from '../ui/minimap.js';
 import { ClassPicker } from '../ui/ClassPicker.js';
 import debugTools from '../ui/DebugTools.js';
+import statsTools from '../ui/StatsTools.js';
 
 class UIManager {
   /**
@@ -77,6 +78,7 @@ class UIManager {
 
     // Initialize debug tools
     debugTools.init(game, () => this._getDebugPlayerInfo());
+    statsTools.init(game);
 
     console.log('UIManager initialized');
 
@@ -104,16 +106,6 @@ class UIManager {
   }
 
   /**
-   * Update scores display
-   * @param {Object} scores - { red, blue }
-   */
-  updateScores(scores) {
-    if (this.hud) {
-      this.hud.updateScores(scores);
-    }
-  }
-
-  /**
    * Update HP and XP display
    * @param {Object} stats - { hp, maxHp, xp, maxXp }
    */
@@ -125,11 +117,11 @@ class UIManager {
 
   /**
    * Update minimap
-   * @param {Object} data - { players, myId, stars }
+   * @param {Object} data - { players, myId }
    */
   updateMinimap(data) {
     if (this.minimap) {
-      this.minimap.update(data.players, data.stars, data.myId);
+      this.minimap.update(data.players, data.myId);
     }
   }
 
@@ -213,6 +205,27 @@ class UIManager {
   }
 
   /**
+   * Show stats panel
+   */
+  showStats() {
+    statsTools.show();
+  }
+
+  /**
+   * Hide stats panel
+   */
+  hideStats() {
+    statsTools.hide();
+  }
+
+  /**
+   * Toggle stats panel
+   */
+  toggleStats() {
+    statsTools.toggle();
+  }
+
+  /**
    * Destroy all UI components
    */
   destroy() {
@@ -233,6 +246,7 @@ class UIManager {
       this.classPicker = null;
     }
     debugTools.destroy();
+    statsTools.destroy();
   }
 }
 
@@ -253,7 +267,6 @@ if (typeof window !== 'undefined') {
       uiManager.init(scene, game, options);
       return window.UI; // Return self for chaining
     },
-    updateScores: (scores) => uiManager.updateScores(scores),
     updateHpXp: (stats) => uiManager.updateHpXp(stats),
     tick: (camera) => uiManager.tick(camera),
     updateMinimap: (data) => uiManager.updateMinimap(data)

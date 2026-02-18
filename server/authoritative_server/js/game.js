@@ -4,6 +4,12 @@
 const { ArcadePhysics } = require('arcade-physics');
 const UI = require('./ui');
 const EntityManager = require('./managers/EntityManager');
+const ShootingStarManager = require('./managers/ShootingStarManager');
+const {
+  normalizeUsername,
+  getOrCreateProfile,
+  updateProfile
+} = require('../../persistence/playerProfiles');
 
 // EntityManager instance (initialized in initializeServer)
 let entityManager = null;
@@ -12,7 +18,6 @@ let entityManager = null;
 const WORLD_WIDTH = 2000;
 const WORLD_HEIGHT = 2000;
 const BORDER_BUFFER = 20;
-const XP_PER_STAR = 10;
 
 // Ship class definitions (server-side)
 const SHIP_CLASSES = {
@@ -21,36 +26,11 @@ const SHIP_CLASSES = {
 };
 const DEFAULT_CLASS = 'hunter';
 
-// Cooldown so a star can't trigger multiple times in the same instant
-const starPickupCooldown = new Map(); // starId -> lastTriggerFrame
-
 // Game state
-const gameState = {
-  scores: { red: 0, blue: 0 },
-  stars: []
-};
-
-function resetScoresIfNoPlayers(io) {
-  if (entityManager && entityManager.getCount() === 0 && (gameState.scores.red !== 0 || gameState.scores.blue !== 0)) {
-    gameState.scores.red = 0;
-    gameState.scores.blue = 0;
-    console.log('🔄 All players disconnected. Resetting scores to zero.');
-    UI.emitScore(io, { ...gameState.scores });
-  }
-}
+const gameState = {};
 
 // Physics world
 let physics = null;
-const starBodies = [];
-
-// Initialize 5 stars at random positions
-for (let i = 0; i < 5; i++) {
-  gameState.stars.push({
-    id: i,
-    x: Math.floor(Math.random() * (WORLD_WIDTH - 100)) + 50,
-    y: Math.floor(Math.random() * (WORLD_HEIGHT - 100)) + 50
-  });
-}
 
 function removeStalePlayers(io) {
   const activeSockets = io?.sockets?.sockets;
@@ -65,13 +45,10 @@ function removeStalePlayers(io) {
     console.warn('🧹 Removing stale player without active socket:', playerId);
     io.emit('playerDisconnected', playerId);
   });
-
-  resetScoresIfNoPlayers(io);
 }
 
 function initializeServer(io) {
   console.log('✅ Initializing authoritative server with arcade-physics...');
-  console.log('⭐ Initial star positions:', gameState.stars);
 
   // Initialize arcade-physics
   physics = new ArcadePhysics({
@@ -87,19 +64,28 @@ function initializeServer(io) {
     borderBuffer: BORDER_BUFFER
   });
 
-  // Create static bodies for stars
-  gameState.stars.forEach((star) => {
-    const starBody = physics.add.staticBody(star.x, star.y, 30, 30);
-    starBody.starId = star.id;
-    starBodies.push(starBody);
-  });
-
   console.log('✅ Physics world initialized');
+
+  // Reject sockets without a valid session
+  io.use((socket, next) => {
+    const session = socket.request.session;
+    if (session && session.username) {
+      next();
+    } else {
+      next(new Error('Authentication required'));
+    }
+  });
 
   // Handle client connections
   io.on('connection', (socket) => {
     removeStalePlayers(io);
-    console.log('🎮 User connected:', socket.id.substring(0, 8));
+
+    const username = normalizeUsername(socket.request.session.username);
+    console.log('🎮 User connected:', socket.id.substring(0, 8), '(' + username + ')');
+
+    socket.data.username = username;
+    socket.data.profileLoaded = false;
+    socket.data.profileLoadPromise = null;
 
     // Create player ship using EntityManager
     const startX = Math.floor(Math.random() * (WORLD_WIDTH - 100)) + 50;
@@ -107,7 +93,7 @@ function initializeServer(io) {
 
     const classConfig = SHIP_CLASSES[DEFAULT_CLASS];
     const ship = entityManager.createShip(socket.id, startX, startY, {
-      team: Math.random() < 0.5 ? 'red' : 'blue',
+      team: 'neutral',
       classKey: DEFAULT_CLASS,
       maxSpeed: classConfig.speed,
       acceleration: classConfig.accel,
@@ -115,10 +101,8 @@ function initializeServer(io) {
       hp: classConfig.maxHp
     });
 
-    // Set up collision detection between this player and all stars
-    entityManager.setupStarCollisions(socket.id, starBodies, (player, star) => {
-      handleStarCollection(io, player, star);
-    });
+    // Set player name from session (already authenticated)
+    ship.setPlayerName(username);
 
     const activeSocketCount = io.sockets?.sockets?.size ?? 0;
     console.log('📊 Total active players:', entityManager.getCount());
@@ -127,9 +111,6 @@ function initializeServer(io) {
 
     // Send current state to new player
     socket.emit('currentPlayers', entityManager.serializeAll());
-    console.log('📤 Sending star locations to new player:', gameState.stars);
-    UI.emitStars(socket, gameState.stars);
-    UI.emitScore(socket, gameState.scores);
 
     // Notify others
     socket.broadcast.emit('newPlayer', ship.serialize());
@@ -141,14 +122,37 @@ function initializeServer(io) {
       }
     });
 
-    // Handle player name from client
-    socket.on('setPlayerName', (playerName) => {
-      const ship = entityManager.getShip(socket.id);
-      if (ship && playerName) {
-        ship.setPlayerName(playerName);
-        console.log('👤 Player', socket.id.substring(0, 8), 'set name to:', playerName);
-      }
-    });
+    // Auto-load profile on connection (replaces old setPlayerName-triggered load)
+    if (username) {
+      socket.data.profileLoadPromise = getOrCreateProfile(username)
+        .then((profile) => {
+          socket.data.profileLoaded = true;
+          if (!profile) return;
+
+          const currentShip = entityManager.getShip(socket.id);
+          if (!currentShip) return;
+
+          const safeMaxXp = Number.isFinite(profile.maxXp) ? Math.max(1, Math.floor(profile.maxXp)) : currentShip.maxXp;
+          const safeXp = Number.isFinite(profile.xp)
+            ? Math.max(0, Math.min(safeMaxXp, Math.floor(profile.xp)))
+            : currentShip.xp;
+
+          currentShip.maxXp = safeMaxXp;
+          currentShip.xp = safeXp;
+
+          socket.emit('profileLoaded', {
+            username: profile.username,
+            xp: currentShip.xp,
+            maxXp: currentShip.maxXp,
+            starsCollected: profile.starsCollected,
+            gamesPlayed: profile.gamesPlayed
+          });
+        })
+        .catch((err) => {
+          console.warn('⚠️ Failed to load profile for', username, err);
+          socket.data.profileLoaded = true;
+        });
+    }
 
     // Handle class selection from client
     socket.on('chooseClass', (payload) => {
@@ -195,6 +199,14 @@ function initializeServer(io) {
       const playerName = ship ? ship.getDisplayName() : socket.id.substring(0, 8);
       console.log('👋 User disconnected:', playerName);
 
+      const username = socket.data.username || (ship && ship.playerName) || null;
+      if (username && ship) {
+        void updateProfile(username, {
+          xp: Number.isFinite(ship.xp) ? Math.max(0, Math.floor(ship.xp)) : 0,
+          maxXp: Number.isFinite(ship.maxXp) ? Math.max(1, Math.floor(ship.maxXp)) : 100
+        });
+      }
+
       // Clean up the player (EntityManager handles physics body cleanup)
       if (entityManager.removeShip(socket.id)) {
         console.log('✅ Player removed from game state');
@@ -210,6 +222,12 @@ function initializeServer(io) {
     });
   });
 
+  // Shooting star manager
+  const shootingStarManager = new ShootingStarManager(io, {
+    width: WORLD_WIDTH,
+    height: WORLD_HEIGHT
+  });
+
   // Game loop (60 FPS)
   let frameCount = 0;
   let lastTime = Date.now();
@@ -219,45 +237,12 @@ function initializeServer(io) {
     const delta = currentTime - lastTime;
     lastTime = currentTime;
 
+    shootingStarManager.update(delta);
     updateGame(io, frameCount, delta);
     frameCount++;
   }, 1000 / 60);
 
   console.log('Server ready!');
-}
-
-function handleStarCollection(io, playerBody, starBody) {
-  // Get ship from EntityManager using the body's shipId
-  const ship = entityManager.getShip(playerBody.shipId);
-  if (!ship) return;
-
-  const star = gameState.stars.find(s => s.id === starBody.starId);
-  if (!star) return;
-
-  const playerName = ship.getDisplayName();
-  console.log('⭐⭐⭐ STAR', star.id, 'COLLECTED by', playerName, '! Team:', ship.team);
-
-  // score
-  gameState.scores[ship.team] += 10;
-
-  // XP gain (uses Ship's gainXP method)
-  ship.gainXP(XP_PER_STAR);
-
-  // move star
-  const oldPos = { x: star.x, y: star.y };
-  star.x = Math.floor(Math.random() * (WORLD_WIDTH - 100)) + 50;
-  star.y = Math.floor(Math.random() * (WORLD_HEIGHT - 100)) + 50;
-
-  // update star physics body
-  starBody.x = star.x;
-  starBody.y = star.y;
-  starBody.updateCenter();
-
-  console.log('⭐ Star', star.id, 'moved from', oldPos, 'to', { x: star.x, y: star.y });
-
-  // broadcast UI updates
-  UI.emitScore(io, { ...gameState.scores });
-  UI.emitStars(io, gameState.stars);
 }
 
 
@@ -286,24 +271,6 @@ function updateGame(io, frameCount, delta) {
 
   // Update all ships (apply movement and sync from physics)
   entityManager.updateAll();
-
-  // --- Fallback overlap detection (server-side, distance based) ---
-  // This makes sure stars get collected even if the arcade-physics overlap isn't triggering.
-  entityManager.forEach((ship) => {
-    if (!ship.body) return;
-    starBodies.forEach((starBody) => {
-      const dx = ship.body.x - starBody.x;
-      const dy = ship.body.y - starBody.y;
-      const dist2 = dx*dx + dy*dy;
-      const R = 32; // pickup radius ~ sprite size
-      const canTriggerAgain = (starPickupCooldown.get(starBody.starId) ?? -99999) < (frameCount - 5);
-
-      if (dist2 <= R*R && canTriggerAgain) {
-        starPickupCooldown.set(starBody.starId, frameCount);
-        handleStarCollection(io, ship.body, starBody);
-      }
-    });
-  });
 
   // Physics world handles collision detection automatically via overlap colliders
   physics.world.postUpdate(Date.now(), delta);

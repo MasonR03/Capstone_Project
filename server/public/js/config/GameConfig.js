@@ -44,8 +44,9 @@ const GameConfig = {
   shipPhysics: {
     maxSpeed: 400,
     acceleration: 200,
-    angularSpeed: 300 * (Math.PI / 180), // 5.236 rad/s
-    dragFactor: 0.98
+    angularSpeed: 420 * (Math.PI / 180), // 7.33 rad/s
+    dragFactor: 0.98,
+    gripFactor: 0.2 // lateral velocity dampening per frame (0=spaceship, higher=car-like)
   },
 
   // Movement sync
@@ -71,10 +72,7 @@ const GameConfig = {
     colors: {
       border: 0x00ffff,
       myDot: 0x00e5ff,
-      redDot: 0xff6666,
-      blueDot: 0x6688ff,
-      otherDot: 0xffffff,
-      starDot: 0xffd93b
+      otherDot: 0xffffff
     }
   },
 
@@ -100,15 +98,6 @@ const GameConfig = {
     pingInterval: 1000
   },
 
-  // Star count
-  stars: {
-    count: 5,
-    scale: 1.15,
-    pulseScale: 1.35,
-    pulseAlpha: 0.75,
-    pulseDuration: 700
-  },
-
   // Sprite dimensions
   sprites: {
     ship: {
@@ -124,10 +113,10 @@ const GameConfig = {
       hunter: 'assets/HunterShip.png',
       tanker: 'assets/TankerShip.png'
     },
-    star: 'assets/Star.png',
     hudBars: 'assets/Bar.png',
     menuIn: 'assets/MenuSliderIn.png',
-    menuOut: 'assets/MenuSliderOut.png'
+    menuOut: 'assets/MenuSliderOut.png',
+    backdrop: 'assets/backdrop_tile.webp'
   }
 };
 

@@ -55,8 +55,9 @@ class ClientShip {
     this.stats = {
       maxSpeed: classConfig.stats.speed || 400,
       acceleration: classConfig.stats.accel || 200,
-      angularSpeed: 300 * (Math.PI / 180), // 5.236 rad/s
-      dragFactor: 0.98
+      angularSpeed: GameConfig.shipPhysics.angularSpeed,
+      dragFactor: GameConfig.shipPhysics.dragFactor,
+      gripFactor: GameConfig.shipPhysics.gripFactor
     };
 
     // World bounds from config
@@ -67,6 +68,8 @@ class ClientShip {
     // Create visual elements
     this.sprite = null;
     this.nameText = null;
+    this.trailParticles = null;
+    this.trailEmitter = null;
     this._createSprite(serverState);
   }
 
@@ -104,6 +107,9 @@ class ClientShip {
     // Apply team tint
     this._applyTeamTint();
 
+    // Create trailing glow particles
+    this._createTrail();
+
     // Create name label
     const displayName = this.playerName || this.id.substring(0, 8);
     this.nameText = scene.add.text(this.x, this.y - GameConfig.sprites.nameOffset, displayName, {
@@ -120,16 +126,34 @@ class ClientShip {
   }
 
   /**
+   * Create trailing glow particle emitter
+   * @private
+   */
+  _createTrail() {
+    const scene = this.scene;
+    if (!scene.textures.exists('glow_particle')) return;
+
+    this.trailParticles = scene.add.particles('glow_particle');
+    this.trailParticles.setDepth(0);
+
+    this.trailEmitter = this.trailParticles.createEmitter({
+      speed: { min: 5, max: 20 },
+      scale: { start: 0.5, end: 0 },
+      alpha: { start: 0.7, end: 0 },
+      lifespan: 500,
+      blendMode: 'ADD',
+      frequency: 40,
+      tint: 0x00ffff,
+      follow: this.sprite
+    });
+  }
+
+  /**
    * Apply team color tint to sprite
    */
   _applyTeamTint() {
     if (!this.sprite) return;
-
-    if (this.team === 'red') {
-      this.sprite.setTint(0xff4444);
-    } else if (this.team === 'blue') {
-      this.sprite.setTint(0x4444ff);
-    }
+    this.sprite.clearTint();
   }
 
   /**
@@ -254,6 +278,22 @@ class ClientShip {
         this.predicted.vx = 0;
         this.predicted.vy = 0;
       }
+    }
+
+    // Car-like steering: redirect velocity toward facing direction
+    const currentSpeed = Math.sqrt(this.predicted.vx ** 2 + this.predicted.vy ** 2);
+    if (currentSpeed > 1) {
+      const facingAngle = this.predicted.rotation + 1.5;
+      const facingX = Math.cos(facingAngle);
+      const facingY = Math.sin(facingAngle);
+
+      const forwardSpeed = this.predicted.vx * facingX + this.predicted.vy * facingY;
+      const lateralX = this.predicted.vx - forwardSpeed * facingX;
+      const lateralY = this.predicted.vy - forwardSpeed * facingY;
+
+      const gripPerFrame = 1 - Math.pow(1 - this.stats.gripFactor, dt * 60);
+      this.predicted.vx -= lateralX * gripPerFrame;
+      this.predicted.vy -= lateralY * gripPerFrame;
     }
 
     // Clamp velocity to max
@@ -397,6 +437,11 @@ class ClientShip {
    * Clean up resources
    */
   destroy() {
+    if (this.trailParticles) {
+      this.trailParticles.destroy();
+      this.trailParticles = null;
+      this.trailEmitter = null;
+    }
     if (this.sprite) {
       this.sprite.destroy();
       this.sprite = null;

@@ -5,6 +5,8 @@ A 2D arcade-style multiplayer space game built with Phaser 3 and Socket.IO.
 ## Overview
 This project is live at https://orbitfall.space/
 
+Dev Server: http://54.187.208.71/
+
 This project demonstrates a Phaser 3 based client and an "authoritative" Node.js server runner together with Socket.IO for networking. The authoritative server can host the game logic and serve a headless HTML runner for automated or server-driven gameplay. Pilot a spaceship and collect stars to gain points for your team. More features coming soon!
 
 ## Features
@@ -22,13 +24,14 @@ This project demonstrates a Phaser 3 based client and an "authoritative" Node.js
 - Socket.IO (real-time networking)
 - Phaser 3 (game engine)
 - jsdom (used by the server runner)
+- Prisma + PostgreSQL (optional player persistence)
 
 ## Getting started
 
 1. Prerequisites
   - Node.js 14+
   - npm (bundled with Node.js)
-
+  - Docker / Docker Compose
 2. Install dependencies
 
   ```powershell
@@ -39,9 +42,13 @@ This project demonstrates a Phaser 3 based client and an "authoritative" Node.js
 
   ```powershell
   npm run server
-  # or
-  node .\server\index.js
   ```
+
+  - In local development, if `DATABASE_URL` is not set (or points to localhost but the DB isn’t running) and Docker Compose is available, this will:
+    - start Postgres (`docker compose up -d db`)
+    - sync the schema (`prisma db push`)
+
+  - To skip the DB bootstrap, set `SKIP_DB_BOOTSTRAP=1` or run `npm run server:raw`.
 
   - When the server finishes loading it will log a message such as:
 
@@ -56,6 +63,29 @@ This project demonstrates a Phaser 3 based client and an "authoritative" Node.js
   ```
   http://localhost:[PORT]
   ```
+
+## Player persistence (username + stats)
+
+When `DATABASE_URL` is set and the DB is reachable, the server will persist a small profile keyed by `username`:
+
+- `xp` / `maxXp`
+- `starsCollected`
+- `gamesPlayed`
+
+The profile is loaded the first time the client emits `setPlayerName`, and is updated on star pickup and disconnect.
+
+## Reset DB on EC2 reboot (optional, destructive)
+
+By default the EC2 Postgres data is stored in a named Docker volume (`orbitfall_pgdata`), so it survives reboots.
+
+If you want the DB to be wiped automatically on host reboot (dev/ephemeral environments only), set a GitHub
+Actions environment variable:
+
+```text
+RESET_DB_ON_REBOOT=1
+```
+
+On deploy, this installs an `@reboot` cron entry that runs `scripts/reset-db-on-reboot.sh` on the EC2 host.
 
 
 ## Troubleshooting

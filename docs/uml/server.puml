@@ -1,0 +1,46 @@
+@startuml
+skinparam componentStyle rectangle
+skinparam shadowing false
+skinparam packageStyle rectangle
+
+package "Server (Node.js)" {
+  [index.js] as Entry
+  [Express HTTP] as Http
+  [Socket.IO] as SIO
+  [authoritative_server/js/game.js] as Game
+  [EntityManager] as EM
+  [Ship] as Ship
+  [DefaultShip] as DShip
+  [UI emitters] as UI
+  [Prisma persistence] as DB
+}
+
+Entry --> Http : serve /public + /assets
+Entry --> SIO : websocket server
+Entry --> Game : initializeServer(io)
+
+Game --> EM : create/remove ships
+EM --> DShip : createShip()
+DShip --> Ship : extends
+Game --> UI : emitScore, emitStars, uiSnapshot
+Game --> DB : getOrCreateProfile
+Game --> DB : updateProfile
+Game --> DB : recordStarCollected
+
+SIO --> Game : connection + events
+
+note right of Game
+  60 FPS tick:
+  - physics update
+  - ship movement
+  - star collisions
+  - emit playerUpdates
+end note
+
+note bottom of DB
+  Optional. Enabled if
+  DATABASE_URL + Prisma
+  connection succeeds.
+end note
+
+@enduml

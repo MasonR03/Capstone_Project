@@ -1,7 +1,7 @@
 /**
  * HUD - Heads-Up Display component
  *
- * Displays HP/XP bars and score text, pinned to the screen.
+ * Displays HP/XP bars pinned to the screen.
  */
 
 // Get config with fallback
@@ -52,7 +52,6 @@ class HUD {
     this.xpFill = null;
     this.hpNumText = null;
     this.xpNumText = null;
-    this.scoreText = null;
 
     this._create();
   }
@@ -122,13 +121,6 @@ class HUD {
     this._safeAdd(this.frameImg);
     this._safeAdd(this.hpNumText);
     this._safeAdd(this.xpNumText);
-
-    // Score text (separate, below HUD)
-    this.scoreText = this.scene.add.text(20, 80, 'Score: R 0 | B 0', {
-      fontSize: '18px',
-      fill: '#ffffff',
-      fontFamily: 'monospace'
-    }).setScrollFactor(0).setDepth(210);
   }
 
   /**
@@ -172,15 +164,6 @@ class HUD {
   }
 
   /**
-   * Update score display
-   * @param {Object} scores - { red, blue }
-   */
-  updateScores(scores) {
-    if (!scores || !this.scoreText) return;
-    this.scoreText.setText(`Score: R ${scores.red || 0} | B ${scores.blue || 0}`);
-  }
-
-  /**
    * Update positions on camera resize
    * @param {Phaser.Cameras.Scene2D.Camera} camera
    */
@@ -188,9 +171,6 @@ class HUD {
     if (!camera) return;
     if (this.container) {
       this.container.setPosition(this.HUD_X, this.HUD_Y);
-    }
-    if (this.scoreText) {
-      this.scoreText.setPosition(20, 80);
     }
   }
 
@@ -201,10 +181,6 @@ class HUD {
     if (this.container) {
       this.container.destroy();
       this.container = null;
-    }
-    if (this.scoreText) {
-      this.scoreText.destroy();
-      this.scoreText = null;
     }
   }
 }

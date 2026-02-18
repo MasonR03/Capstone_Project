@@ -11,6 +11,7 @@ import networkManager from '../managers/NetworkManager.js';
 import inputManager from '../managers/InputManager.js';
 import uiManager from '../managers/UIManager.js';
 import ClientEntityManager from '../managers/ClientEntityManager.js';
+import ShootingStarRenderer from '../managers/ShootingStarRenderer.js';
 
 class GameScene extends Phaser.Scene {
   constructor() {
@@ -18,9 +19,6 @@ class GameScene extends Phaser.Scene {
 
     // Entity manager for ships
     this.entityManager = null;
-
-    // Local references
-    this.starSprites = [];
 
     // Debug logging throttle
     this._lastClassLog = 0;
@@ -39,8 +37,10 @@ class GameScene extends Phaser.Scene {
     this.load.image('ship_hunter', GameConfig.assets.ships.hunter);
     this.load.image('ship_tanker', GameConfig.assets.ships.tanker);
 
-    // Star + HUD
-    this.load.image('star', GameConfig.assets.star);
+    // Backdrop
+    this.load.image('backdrop', GameConfig.assets.backdrop);
+
+    // HUD
     this.load.image('hudBars', GameConfig.assets.hudBars);
 
     // Level menu
@@ -64,6 +64,25 @@ class GameScene extends Phaser.Scene {
     this.physics.world.setBounds(0, 0, WORLD_W, WORLD_H);
     this.cameras.main.setBounds(0, 0, WORLD_W, WORLD_H);
 
+    // Generate soft glow particle texture for ship trails
+    const glowCanvas = this.textures.createCanvas('glow_particle', 32, 32);
+    const ctx = glowCanvas.getContext();
+    const gradient = ctx.createRadialGradient(16, 16, 0, 16, 16, 16);
+    gradient.addColorStop(0, 'rgba(255, 255, 255, 1)');
+    gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, 32, 32);
+    glowCanvas.refresh();
+
+    // Add tiled backdrop covering the entire world
+    this.add.tileSprite(0, 0, WORLD_W, WORLD_H, 'backdrop')
+      .setOrigin(0, 0)
+      .setDepth(-1);
+
+    // Shooting star renderer
+    this.shootingStars = new ShootingStarRenderer(this, networkManager.getSocket());
+    this.shootingStars.init();
+
     // Add world border visuals
     this._addWorldBorders();
 
@@ -81,15 +100,6 @@ class GameScene extends Phaser.Scene {
     uiManager.init(this, this.game, {
       world: { width: WORLD_W, height: WORLD_H }
     });
-
-    // Update scores from state
-    uiManager.updateScores(gameState.getServerScores());
-
-    // Create stars
-    this._createStars();
-
-    // Apply pending star positions from network
-    gameState.applyPendingStarPositions();
 
     // Open class picker
     uiManager.openClassPicker((pickedKey) => {
@@ -111,22 +121,17 @@ class GameScene extends Phaser.Scene {
     // Set up socket event handlers
     this._setupSocketHandlers();
 
-    // Subscribe to state changes
-    this._setupStateSubscriptions();
-
-    // Request current players (in case we missed the initial event)
-    if (networkManager.isConnected()) {
-      const myId = gameState.getMyId();
-      if (myId) {
-        networkManager.emit('setPlayerName', myId);
-      }
-    }
+    // Set up socket event handlers is enough — session auth means server
+    // already knows our username on connect, no setPlayerName needed.
   }
 
   /**
    * Update loop
    */
   update(time, delta) {
+    // Shooting stars run regardless of game state
+    this.shootingStars.update(delta);
+
     // Don't process until class is chosen
     if (!gameState.isClassChosen()) return;
 
@@ -153,12 +158,10 @@ class GameScene extends Phaser.Scene {
     // Update minimap
     const socketId = gameState.getSocketId();
     const minimapData = this.entityManager ? this.entityManager.getMinimapData() : {};
-    const stars = (this.starSprites || []).map((s, i) => ({ id: i, x: s.x, y: s.y }));
 
     uiManager.updateMinimap({
       players: minimapData,
-      myId: socketId,
-      stars
+      myId: socketId
     });
 
     // UI tick
@@ -183,40 +186,6 @@ class GameScene extends Phaser.Scene {
     this.add.rectangle(borderWidth / 2, WORLD_H / 2, borderWidth, WORLD_H, borderColor).setDepth(0);
     // Right
     this.add.rectangle(WORLD_W - borderWidth / 2, WORLD_H / 2, borderWidth, WORLD_H, borderColor).setDepth(0);
-  }
-
-  /**
-   * Create star sprites
-   * @private
-   */
-  _createStars() {
-    const WORLD_W = GameConfig.world.width;
-    const WORLD_H = GameConfig.world.height;
-    const starConfig = GameConfig.stars;
-
-    this.starSprites = [];
-
-    for (let i = 0; i < starConfig.count; i++) {
-      const star = this.add.image(WORLD_W / 2 + (i * 100 - 200), WORLD_H / 2, 'star');
-      star.setOrigin(0.5, 0.5);
-      star.setDepth(0);
-      star.setScale(starConfig.scale);
-      star.setAlpha(1.0);
-
-      // Pulsing animation
-      this.tweens.add({
-        targets: star,
-        scale: starConfig.pulseScale,
-        alpha: starConfig.pulseAlpha,
-        duration: starConfig.pulseDuration,
-        yoyo: true,
-        repeat: -1,
-        ease: 'Sine.easeInOut'
-      });
-
-      this.starSprites.push(star);
-      gameState.addStarSprite(star);
-    }
   }
 
   /**
@@ -287,28 +256,6 @@ class GameScene extends Phaser.Scene {
       });
 
       this._ensureCameraFollow();
-    });
-  }
-
-  /**
-   * Set up state subscriptions
-   * @private
-   */
-  _setupStateSubscriptions() {
-    // Score updates
-    gameState.on('serverScores', (scores) => {
-      uiManager.updateScores(scores);
-    });
-
-    // Star position updates
-    gameState.on('starsUpdated', (starsInfo) => {
-      if (starsInfo && this.starSprites.length > 0) {
-        starsInfo.forEach((star, index) => {
-          if (this.starSprites[index]) {
-            this.starSprites[index].setPosition(star.x, star.y);
-          }
-        });
-      }
     });
   }
 
