@@ -113,7 +113,7 @@ const GameConfig = {
   assets: {
     ships: {
       hunter: 'assets/HunterShip.png',
-      tanker: 'assets/TankerShip.png'
+      tanker: 'assets/vector_shipT.svg'
     },
     hudBars: 'assets/Bar.png',
     menuIn: 'assets/MenuSliderIn.png',
