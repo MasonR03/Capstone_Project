@@ -98,6 +98,15 @@ const GameConfig = {
     pingInterval: 1000
   },
 
+  // Weapon settings
+  weapons: {
+    bulletSpeed: 500,
+    bulletLifetime: 2000,   // ms before bullet despawns
+    fireRate: 250,          // ms between shots
+    bulletDamage: 15,
+    bulletSize: 8
+  },
+
   // Sprite dimensions
   sprites: {
     ship: {
@@ -113,6 +122,7 @@ const GameConfig = {
       hunter: 'assets/HunterShip.png',
       tanker: 'assets/TankerShip.png'
     },
+    bullet: 'assets/bullet_defult.png',
     hudBars: 'assets/Bar.png',
     menuIn: 'assets/MenuSliderIn.png',
     menuOut: 'assets/MenuSliderOut.png',

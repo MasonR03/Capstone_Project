@@ -4,6 +4,7 @@
 const { ArcadePhysics } = require('arcade-physics');
 const UI = require('./ui');
 const EntityManager = require('./managers/EntityManager');
+const BulletManager = require('./managers/BulletManager');
 const ShootingStarManager = require('./managers/ShootingStarManager');
 const {
   normalizeUsername,
@@ -11,8 +12,9 @@ const {
   updateProfile
 } = require('../../persistence/playerProfiles');
 
-// EntityManager instance (initialized in initializeServer)
+// EntityManager and BulletManager instances (initialized in initializeServer)
 let entityManager = null;
+let bulletManager = null;
 
 // Global constants (can be accessed via EntityManager .worldConfig)
 const WORLD_WIDTH = 2000;
@@ -25,6 +27,17 @@ const SHIP_CLASSES = {
   tanker: { maxHp: 160, speed: 180, accel: 160 }
 };
 const DEFAULT_CLASS = 'hunter';
+
+// Weapon config (server-side)
+const WEAPON_CONFIG = {
+  bulletSpeed: 500,
+  bulletLifetime: 2000,
+  fireRate: 250,
+  bulletDamage: 15
+};
+
+// Respawn delay in ms
+const RESPAWN_DELAY = 3000;
 
 // Game state
 const gameState = {};
@@ -63,6 +76,12 @@ function initializeServer(io) {
     height: WORLD_HEIGHT,
     borderBuffer: BORDER_BUFFER
   });
+
+  // Initialize BulletManager
+  bulletManager = new BulletManager(
+    { width: WORLD_WIDTH, height: WORLD_HEIGHT },
+    WEAPON_CONFIG
+  );
 
   console.log('✅ Physics world initialized');
 
@@ -193,6 +212,17 @@ function initializeServer(io) {
       }
     });
 
+    // Handle shooting
+    socket.on('playerShoot', () => {
+      const ship = entityManager.getShip(socket.id);
+      if (!ship || ship.hp <= 0) return;
+
+      const bullet = bulletManager.tryFire(socket.id, ship.x, ship.y, ship.rotation);
+      if (bullet) {
+        io.emit('bulletFired', bullet.serialize());
+      }
+    });
+
     // Handle disconnect
     socket.on('disconnect', () => {
       const ship = entityManager.getShip(socket.id);
@@ -206,6 +236,9 @@ function initializeServer(io) {
           maxXp: Number.isFinite(ship.maxXp) ? Math.max(1, Math.floor(ship.maxXp)) : 100
         });
       }
+
+      // Clean up bullets belonging to this player
+      bulletManager.removeByOwner(socket.id);
 
       // Clean up the player (EntityManager handles physics body cleanup)
       if (entityManager.removeShip(socket.id)) {
@@ -272,11 +305,75 @@ function updateGame(io, frameCount, delta) {
   // Update all ships (apply movement and sync from physics)
   entityManager.updateAll();
 
+  // Update bullets and check collisions
+  const bulletResult = bulletManager.update(delta, entityManager.ships);
+
+  // Handle bullet hits
+  bulletResult.destroyed.forEach((hit) => {
+    io.emit('bulletHit', {
+      bulletId: hit.bulletId,
+      shipId: hit.shipId,
+      damage: hit.damage,
+      killed: hit.killed
+    });
+
+    if (hit.killed) {
+      const deadShip = entityManager.getShip(hit.shipId);
+
+      console.log('💀 Ship destroyed:', hit.shipId, 'by', hit.ownerId);
+      io.emit('playerKilled', {
+        victimId: hit.shipId,
+        killerId: hit.ownerId
+      });
+
+      // Respawn after delay
+      if (deadShip) {
+        setTimeout(() => {
+          // Check if ship still exists (player might have disconnected)
+          const ship = entityManager.getShip(hit.shipId);
+          if (!ship) return;
+
+          // Reset HP and reposition
+          ship.hp = ship.maxHp;
+          const newX = Math.floor(Math.random() * (WORLD_WIDTH - 100)) + 50;
+          const newY = Math.floor(Math.random() * (WORLD_HEIGHT - 100)) + 50;
+          ship.x = newX;
+          ship.y = newY;
+          if (ship.body) {
+            ship.body.x = newX;
+            ship.body.y = newY;
+            ship.body.setVelocity(0, 0);
+          }
+
+          io.emit('playerRespawned', {
+            playerId: hit.shipId,
+            x: newX,
+            y: newY,
+            hp: ship.hp,
+            maxHp: ship.maxHp
+          });
+
+          console.log('🔄 Ship respawned:', hit.shipId);
+        }, RESPAWN_DELAY);
+      }
+    }
+  });
+
+  // Broadcast bullet removals
+  if (bulletResult.removed.length > 0) {
+    io.emit('bulletsRemoved', bulletResult.removed);
+  }
+
   // Physics world handles collision detection automatically via overlap colliders
   physics.world.postUpdate(Date.now(), delta);
 
   // Broadcast player updates with timestamp for client interpolation
   io.emit('playerUpdates', { players: entityManager.serializeAll(), timestamp: Date.now() });
+
+  // Broadcast bullet positions every 3 frames (~20 Hz) to save bandwidth
+  if (frameCount % 3 === 0 && bulletManager.getCount() > 0) {
+    io.emit('bulletUpdates', bulletManager.serializeAll());
+  }
 
   // Sends a UI snapshot ~ every 10sec
   if (frameCount % 6 === 0) {

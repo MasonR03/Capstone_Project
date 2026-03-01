@@ -177,6 +177,13 @@ class NetworkManager {
   }
 
   /**
+   * Emit a shoot event to the server
+   */
+  emitShoot() {
+    this.emit('playerShoot');
+  }
+
+  /**
    * Emit class choice
    * @param {string} classKey - The chosen class key
    */
