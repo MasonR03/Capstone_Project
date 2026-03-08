@@ -130,41 +130,50 @@ class ClassPicker {
       // Row container
       const row = this.scene.add.container(cam.width / 2, y);
       this.overlay.add(row);
+      
+      const rowW = 700;
+      const rowH = 130;
+
 
       // Selection box
-      const box = this.scene.add.rectangle(0, 0, 560, 130, 0x0b141b, 0.95)
+      const box = this.scene.add.rectangle(0, 0, rowW, rowH, 0x0b141b, 0.95)
         .setStrokeStyle(2, 0x1fb6d1, 0.35);
       row.add(box);
 
       // Soft glow border (subtle)
-      const glow = this.scene.add.rectangle(0, 0, 570, 140, 0x00c8ff, 0.08)
+      const glow = this.scene.add.rectangle(0, 0, rowW + 10, rowH + 10, 0x00c8ff, 0.08)
         .setStrokeStyle(2, 0x00c8ff, 0.18);
       row.add(glow);
 
+      const leftX = -rowW / 2 + 100;
+      const nameX = -rowW / 2 + 210;
+      const statsX = 55;
+      const tagX = rowW / 2 - 70;
+
       // Ship image
-      const shipImg = this.scene.add.image(-200, 6, classCfg.spriteKey);
+      const shipImg = this.scene.add.image(leftX, 6, classCfg.spriteKey);
       shipImg.setDisplaySize(shipWidth * shipScale, shipHeight * shipScale);
       row.add(shipImg);
 
       // Ship name
-      const nameText = this.scene.add.text(shipImg.x + 120, shipImg.y - 22, classCfg.name, {
+      const nameText = this.scene.add.text(nameX, -20, classCfg.name, {
         fontSize: '18px',
         fill: '#e9fbff',
         fontFamily: 'Orbitron, monospace'
-      }).setOrigin(0.5, 0.5);
+      }).setOrigin(0, 0.5);
       row.add(nameText);
 
       // Stats
       const st = classCfg.stats;
-      const statsText = this.scene.add.text(40, -10, `HP ${st.maxHp}   SPD ${st.speed}   ACC ${st.accel}`, {
+      const statsText = this.scene.add.text(statsX, -2, `HP ${st.maxHp}   SPD ${st.speed}   ACC ${st.accel}`, {
         fontSize: '14px',
         fill: '#b8d7e2',
         fontFamily: 'Orbitron, monospace'
-      });
+      }).setOrigin(0, 0.5);
       row.add(statsText);
 
       // Selection tag
-      const tag = this.scene.add.text(235, 0, '', {
+      const tag = this.scene.add.text(tagX, -2, '', {
         fontSize: '13px',
         fill: '#00ffcc',
         fontFamily: 'Orbitron, monospace'
@@ -177,14 +186,19 @@ class ClassPicker {
         this.selectedIndex = i;
         this._refresh();
       });
-      box.on('pointerdown', () => {
-        this.selectedIndex = i;
-        this._refresh();
-        this._complete(this.classKeys[this.selectedIndex]);
-      });
+        box.on('pointerdown', () => {
+          this.selectedIndex = i;
+          this._refresh();
+          this._complete(this.classKeys[this.selectedIndex]);
+        });
 
-      this.rows.push({ key, box, tag });
-    });
+        this.rows.push({
+          key,
+          box,
+          tag,
+          glow
+        });
+      });
   }
 
   /**
@@ -250,7 +264,10 @@ class ClassPicker {
   _refresh() {
     this.rows.forEach((r, i) => {
       const selected = i === this.selectedIndex;
-      r.box.setStrokeStyle(2, selected ? 0x00ffcc : 0xffffff, selected ? 0.9 : 0.35);
+      r.box.setStrokeStyle(2, selected ? 0x00ffcc : 0xffffff, selected ? 0.95 : 0.30);
+      if (r.glow) {
+        r.glow.setVisible(selected);
+      }
       r.tag.setText(selected ? 'SELECTED' : '');
     });
   }
