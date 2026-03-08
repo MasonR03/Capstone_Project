@@ -5,6 +5,8 @@
  * Used by both managers and UI components.
  */
 
+import { CLASS_STATS } from '../stats/stats.js';
+
 const GameConfig = {
   // World bounds
   world: {
@@ -27,31 +29,48 @@ const GameConfig = {
 
   // Ship class definitions
   shipClasses: {
+    starter: {
+      name: CLASS_STATS.starter.name,
+      spriteKey: CLASS_STATS.starter.spriteKey,
+      stats: {
+        maxHp: CLASS_STATS.starter.maxHp,
+        speed: CLASS_STATS.starter.speed,
+        accel: CLASS_STATS.starter.accel
+      }
+    },
     hunter: {
-      name: 'Hunter',
-      spriteKey: 'ship_hunter',
-      stats: { maxHp: 90, speed: 260, accel: 220 }
+      name: CLASS_STATS.hunter.name,
+      spriteKey: CLASS_STATS.hunter.spriteKey,
+      stats: {
+        maxHp: CLASS_STATS.hunter.maxHp,
+        speed: CLASS_STATS.hunter.speed,
+        accel: CLASS_STATS.hunter.accel
+      }
     },
     tanker: {
-      name: 'Tanker',
-      spriteKey: 'ship_tanker',
-      stats: { maxHp: 160, speed: 180, accel: 160 }
+      name: CLASS_STATS.tanker.name,
+      spriteKey: CLASS_STATS.tanker.spriteKey,
+      stats: {
+        maxHp: CLASS_STATS.tanker.maxHp,
+        speed: CLASS_STATS.tanker.speed,
+        accel: CLASS_STATS.tanker.accel
+      }
     }
   },
-  defaultClass: 'hunter',
+  defaultClass: 'starter',
 
-  // Ship physics (must match server)
+  // Ship physics
   shipPhysics: {
     maxSpeed: 400,
     acceleration: 200,
-    angularSpeed: 420 * (Math.PI / 180), // 7.33 rad/s
+    angularSpeed: 420 * (Math.PI / 180),
     dragFactor: 0.98,
-    gripFactor: 0.2 // lateral velocity dampening per frame (0=spaceship, higher=car-like)
+    gripFactor: 0.2
   },
 
   // Movement sync
   movement: {
-    snapThreshold: 10000,  // squared distance; snap if error > 100 units
+    snapThreshold: 10000,
     blendFactor: 0.1,
     interpolationFactor: 0.15
   },
@@ -101,8 +120,8 @@ const GameConfig = {
   // Weapon settings
   weapons: {
     bulletSpeed: 500,
-    bulletLifetime: 2000,   // ms before bullet despawns
-    fireRate: 250,          // ms between shots
+    bulletLifetime: 2000,
+    fireRate: 250,
     bulletDamage: 15,
     bulletSize: 8
   },
@@ -119,7 +138,8 @@ const GameConfig = {
   // Asset paths
   assets: {
     ships: {
-      hunter: 'assets/HunterShip.png',
+      starter: 'assets/spaceShips_001.png',
+      hunter: 'assets/vector_shipH.svg',
       tanker: 'assets/vector_shipT.svg'
     },
     bullet: 'assets/bullet_defult.png',
@@ -130,9 +150,6 @@ const GameConfig = {
   }
 };
 
-// Note: Not freezing GameConfig because Phaser needs to mutate physics config during initialization
-
-// Export for ES6 modules and browser global
 if (typeof window !== 'undefined') {
   window.GameConfig = GameConfig;
 }
