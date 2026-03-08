@@ -1,16 +1,14 @@
 /**
  * Minimap - Round minimap UI component
  *
- * Shows the local player, other players, and world edge indicators.
+ * Shows the local player, other players, stars, and world border indicators.
  * Follows the local player and anchors to bottom-right of screen.
  */
 
-// Import GameConfig when used as ES6 module
-// For backward compatibility, also check window.GameConfig
 const getConfig = () => {
   if (typeof GameConfig !== 'undefined') return GameConfig;
   if (typeof window !== 'undefined' && window.GameConfig) return window.GameConfig;
-  // Fallback defaults
+
   return {
     world: { width: 2000, height: 2000 },
     minimap: {
@@ -29,12 +27,14 @@ const getConfig = () => {
 
 class Minimap {
   /**
-   * Create a new Minimap
-   * @param {Phaser.Scene} scene - The Phaser scene
-   * @param {Object} options - Configuration options
+   * Create a new Minimap.
+   *
+   * @param {Phaser.Scene} scene
+   * @param {Object} options
    */
   constructor(scene, options = {}) {
     const config = getConfig();
+
     this.scene = scene;
     this.worldW = options.worldW || config.world.width;
     this.worldH = options.worldH || config.world.height;
@@ -44,7 +44,13 @@ class Minimap {
     this.worldRange = options.worldRange || config.minimap.worldRange;
 
     // Colors
-    this.colors = { ...config.minimap.colors };
+    this.colors = {
+      ...config.minimap.colors,
+      worldEdge: 0xff4d4d,
+      worldBox: 0xff6666,
+      starDot: 0xffdd55,
+      starTick: 0xffcc33
+    };
 
     // Graphics objects
     this.container = null;
@@ -53,35 +59,37 @@ class Minimap {
     this.ringGraphics = null;
     this.bgGraphics = null;
 
-    // Alias for backward compatibility
+    // Backward compatibility aliases
     this.cont = null;
     this.g = null;
 
     this._create();
   }
 
+
   /**
-   * Create the minimap UI elements
+   * Create the minimap UI elements.
+   *
    * @private
    */
   _create() {
     const cam = this.scene.cameras.main;
 
-    // Container positioned bottom-right
     this.container = this.scene.add.container(
       cam.width - (this.size / 2) - this.margin,
       cam.height - (this.size / 2) - this.margin
     ).setScrollFactor(0).setDepth(2000);
 
-    // Circular mask
+    // Circular mask drawn in local container space
     this.maskGraphics = this.scene.add.graphics().setScrollFactor(0);
     this.maskGraphics.fillStyle(0xffffff, 1);
     this.maskGraphics.fillCircle(0, 0, this.radius);
-    const geoMask = this.maskGraphics.createGeometryMask();
     this.maskGraphics.setVisible(false);
 
-    // Draw layer (masked)
+    // Main draw layer in local container space
     this.graphics = this.scene.add.graphics().setScrollFactor(0);
+
+    const geoMask = this.maskGraphics.createGeometryMask();
     this.graphics.setMask(geoMask);
 
     // Ring border
@@ -89,21 +97,25 @@ class Minimap {
     this.ringGraphics.lineStyle(3, this.colors.border, 1);
     this.ringGraphics.strokeCircle(0, 0, this.radius);
 
-    // Soft background
+    // Background
     this.bgGraphics = this.scene.add.graphics().setScrollFactor(0);
     this.bgGraphics.fillStyle(0x000000, 0.45);
     this.bgGraphics.fillCircle(0, 0, this.radius);
 
-    // Add to container
-    this.container.add([this.bgGraphics, this.graphics, this.ringGraphics]);
+    // Everything uses the same local coordinates now
+    this.container.add([
+      this.bgGraphics,
+      this.graphics,
+      this.ringGraphics,
+      this.maskGraphics
+    ]);
 
-    // Backward compatibility aliases
     this.cont = this.container;
     this.g = this.graphics;
   }
 
   /**
-   * Keep minimap anchored to bottom-right when camera resizes
+   * Keep minimap anchored to bottom-right when camera resizes.
    */
   anchor() {
     const cam = this.scene.cameras.main;
@@ -114,20 +126,28 @@ class Minimap {
   }
 
   /**
-   * Project world coordinates relative to player into minimap space
+   * Project world-relative coordinates into minimap space.
+   *
+   * @param {number} dx
+   * @param {number} dy
+   * @returns {{x:number,y:number,r:number}}
    * @private
    */
   _projectRelative(dx, dy) {
-    const r = this.radius - 8; // Pad from rim
-    const s = r / this.worldRange; // Pixels per world unit
+    const r = this.radius - 8;
+    const s = r / this.worldRange;
     return { x: dx * s, y: dy * s, r };
   }
 
   /**
-   * Draw a tick on the rim pointing toward off-screen elements
+   * Draw a tick on the rim pointing toward something off-range.
+   *
+   * @param {number} angle
+   * @param {number} color
+   * @param {number} lineWidth
    * @private
    */
-  _rimTick(angle, color = 0xffffff) {
+  _rimTick(angle, color = 0xffffff, lineWidth = 2) {
     const ca = Math.cos(angle);
     const sa = Math.sin(angle);
     const x1 = ca * (this.radius - 8);
@@ -135,7 +155,7 @@ class Minimap {
     const x2 = ca * (this.radius - 2);
     const y2 = sa * (this.radius - 2);
 
-    this.graphics.lineStyle(2, color, 1);
+    this.graphics.lineStyle(lineWidth, color, 1);
     this.graphics.beginPath();
     this.graphics.moveTo(x1, y1);
     this.graphics.lineTo(x2, y2);
@@ -143,70 +163,232 @@ class Minimap {
   }
 
   /**
-   * Draw world edge markers when near boundaries
+   * Draw pulsing border warning ticks.
+   *
+   * @param {Object} me
    * @private
    */
-  _drawWorldEdges(me) {
-    const edgeDist = 250;
-    const color = 0xff4d4d;
+  _drawWorldEdgeHints(me) {
+    const pulse = 0.45 + (0.35 * (0.5 + 0.5 * Math.sin(this.scene.time.now * 0.008)));
+    const color = this.colors.worldEdge;
 
-    this.graphics.lineStyle(2, color, 0.9);
+    const leftDist = me.x;
+    const rightDist = this.worldW - me.x;
+    const topDist = me.y;
+    const bottomDist = this.worldH - me.y;
 
-    if (me.x < edgeDist) this._rimTick(Math.PI, color); // Left
-    if (this.worldW - me.x < edgeDist) this._rimTick(0, color); // Right
-    if (me.y < edgeDist) this._rimTick(-Math.PI / 2, color); // Top
-    if (this.worldH - me.y < edgeDist) this._rimTick(Math.PI / 2, color); // Bottom
+    const drawEdgeTick = (dist, angle) => {
+      if (dist > this.worldRange) return;
+
+      const closeness = 1 - Phaser.Math.Clamp(dist / this.worldRange, 0, 1);
+      const alphaWidth = 2 + (closeness * 2.5);
+      this._rimTick(angle, color, alphaWidth * pulse);
+    };
+
+    drawEdgeTick(leftDist, Math.PI);
+    drawEdgeTick(rightDist, 0);
+    drawEdgeTick(topDist, -Math.PI / 2);
+    drawEdgeTick(bottomDist, Math.PI / 2);
   }
 
   /**
-   * Plot a point on the minimap
+   * Draw filled border danger zones inside the minimap circle only.
+   *
+   * This avoids rectangle spill by drawing only the portions that lie
+   * inside the minimap circle.
+   *
+   * @param {Object} me
    * @private
    */
-  _plot(dx, dy, color, dotRadius = 3) {
-    const p = this._projectRelative(dx, dy);
-    let x = p.x;
-    let y = p.y;
+  _drawWorldBorderFill(me) {
+    const r = this.radius;
+    const s = (this.radius - 8) / this.worldRange;
 
-    // Check if inside circle
-    if ((x * x + y * y) <= p.r * p.r) {
-      this.graphics.fillStyle(color, 1);
-      this.graphics.fillCircle(x, y, dotRadius);
-    } else {
-      // Clamp to rim and draw a tick
-      const ang = Math.atan2(y, x);
-      this._rimTick(ang, color);
+    const pulse = 0.18 + (0.12 * (0.5 + 0.5 * Math.sin(this.scene.time.now * 0.008)));
+    const fillAlpha = 0.20 + pulse;
+
+    // Project each world boundary into minimap space
+    const leftLine = (0 - me.x) * s;
+    const rightLine = (this.worldW - me.x) * s;
+    const topLine = (0 - me.y) * s;
+    const bottomLine = (this.worldH - me.y) * s;
+
+    this.graphics.fillStyle(this.colors.worldEdge, fillAlpha);
+
+    // Left side
+    if (me.x < this.worldRange) {
+      this._fillLeftOfLineInsideCircle(leftLine, r);
+    }
+
+    // Right side
+    if ((this.worldW - me.x) < this.worldRange) {
+      this._fillRightOfLineInsideCircle(rightLine, r);
+    }
+
+    // Top side
+    if (me.y < this.worldRange) {
+      this._fillAboveLineInsideCircle(topLine, r);
+    }
+
+    // Bottom side
+    if ((this.worldH - me.y) < this.worldRange) {
+      this._fillBelowLineInsideCircle(bottomLine, r);
+    }
+  }
+
+    /**
+   * Fill the area below a horizontal line, clipped to the minimap circle.
+   *
+   * @param {number} yLine
+   * @param {number} r
+   * @private
+   */
+  _fillBelowLineInsideCircle(yLine, r) {
+    const startY = Math.max(yLine, -r);
+    const endY = r;
+
+    for (let y = Math.ceil(startY); y <= Math.floor(endY); y += 2) {
+      const halfWidth = Math.sqrt(Math.max(0, (r * r) - (y * y)));
+      this.graphics.fillRect(-halfWidth, y, halfWidth * 2, 2);
     }
   }
 
   /**
-   * Update the minimap display
-   * @param {Object} players - Map of id -> {x, y, team}
-   * @param {string} myId - Local player's ID
+   * Fill the area above a horizontal line, clipped to the minimap circle.
+   *
+   * @param {number} yLine
+   * @param {number} r
+   * @private
    */
-  update(players, myId) {
+  _fillAboveLineInsideCircle(yLine, r) {
+    const startY = -r;
+    const endY = Math.min(yLine, r);
+
+    for (let y = Math.ceil(startY); y <= Math.floor(endY); y += 2) {
+      const halfWidth = Math.sqrt(Math.max(0, (r * r) - (y * y)));
+      this.graphics.fillRect(-halfWidth, y, halfWidth * 2, 2);
+    }
+  }
+
+  /**
+   * Fill the area left of a vertical line, clipped to the minimap circle.
+   *
+   * @param {number} xLine
+   * @param {number} r
+   * @private
+   */
+  _fillLeftOfLineInsideCircle(xLine, r) {
+    const startX = -r;
+    const endX = Math.min(xLine, r);
+
+    for (let x = Math.ceil(startX); x <= Math.floor(endX); x += 2) {
+      const halfHeight = Math.sqrt(Math.max(0, (r * r) - (x * x)));
+      this.graphics.fillRect(x, -halfHeight, 2, halfHeight * 2);
+    }
+  }
+
+  /**
+   * Fill the area right of a vertical line, clipped to the minimap circle.
+   *
+   * @param {number} xLine
+   * @param {number} r
+   * @private
+   */
+  _fillRightOfLineInsideCircle(xLine, r) {
+    const startX = Math.max(xLine, -r);
+    const endX = r;
+
+    for (let x = Math.ceil(startX); x <= Math.floor(endX); x += 2) {
+      const halfHeight = Math.sqrt(Math.max(0, (r * r) - (x * x)));
+      this.graphics.fillRect(x, -halfHeight, 2, halfHeight * 2);
+    }
+  }
+
+  /**
+   * Plot a point or a rim tick.
+   *
+   * @param {number} dx
+   * @param {number} dy
+   * @param {number} color
+   * @param {number} dotRadius
+   * @param {number} tickWidth
+   * @private
+   */
+  _plot(dx, dy, color, dotRadius = 3, tickWidth = 2) {
+    const p = this._projectRelative(dx, dy);
+    let x = p.x;
+    let y = p.y;
+
+    if ((x * x + y * y) <= p.r * p.r) {
+      this.graphics.fillStyle(color, 1);
+      this.graphics.fillCircle(x, y, dotRadius);
+    } else {
+      const ang = Math.atan2(y, x);
+      this._rimTick(ang, color, tickWidth);
+    }
+  }
+
+  /**
+   * Draw stars on the minimap.
+   *
+   * @param {Object} me
+   * @param {Array<Object>} stars
+   * @private
+   */
+  _drawStars(me, stars = []) {
+    for (let i = 0; i < stars.length; i++) {
+      const star = stars[i];
+      if (!star) continue;
+      this._plot(
+        star.x - me.x,
+        star.y - me.y,
+        this.colors.starDot,
+        2.6,
+        2
+      );
+    }
+  }
+
+  /**
+   * Update the minimap display.
+   *
+   * @param {Object} players
+   * @param {string} myId
+   * @param {Array<Object>} stars
+   */
+  update(players, myId, stars = []) {
     this.graphics.clear();
 
-    // Nothing to center on yet
     const me = players?.[myId];
     if (!me) return;
 
-    // Show world edge hints
-    this._drawWorldEdges(me);
+    // Show pulsing edge hints and filled border danger zones
+    this._drawWorldEdgeHints(me);
+    this._drawWorldBorderFill(me);
+
+    // Stars
+    this._drawStars(me, stars);
 
     // Players
     for (const id in players) {
       const p = players[id];
       const color = id === myId ? this.colors.myDot : this.colors.otherDot;
-      this._plot(p.x - me.x, p.y - me.y, color, id === myId ? 4 : 3.2);
+      this._plot(
+        p.x - me.x,
+        p.y - me.y,
+        color,
+        id === myId ? 4 : 3.2,
+        id === myId ? 2.5 : 2
+      );
     }
 
-    // Draw own center dot last (always visible)
+    // Draw own center dot last
     this.graphics.fillStyle(this.colors.myDot, 1);
     this.graphics.fillCircle(0, 0, 4.5);
   }
 
   /**
-   * Destroy the minimap
+   * Destroy the minimap.
    */
   destroy() {
     if (this.container) {
@@ -214,10 +396,12 @@ class Minimap {
       this.container = null;
       this.cont = null;
     }
+
     if (this.maskGraphics) {
       this.maskGraphics.destroy();
       this.maskGraphics = null;
     }
+
     this.graphics = null;
     this.g = null;
     this.ringGraphics = null;
@@ -225,22 +409,19 @@ class Minimap {
   }
 }
 
-// Export for ES6 modules and browser global
 if (typeof window !== 'undefined') {
   window.Minimap = Minimap;
 
-  // Backward compatibility: MiniMap object with static methods (matches original IIFE API)
   window.MiniMap = {
     create: (scene, worldW, worldH, opts = {}) => {
-      const minimap = new Minimap(scene, { worldW, worldH, ...opts });
-      return minimap;
+      return new Minimap(scene, { worldW, worldH, ...opts });
     },
-    update: (minimap, players, myId) => {
+    update: (minimap, players, myId, stars = []) => {
       if (minimap && minimap.update) {
-        minimap.update(players, myId);
+        minimap.update(players, myId, stars);
       }
     },
-    anchor: (minimap, scene, opts = {}) => {
+    anchor: (minimap) => {
       if (minimap && minimap.anchor) {
         minimap.anchor();
       }
@@ -248,5 +429,4 @@ if (typeof window !== 'undefined') {
   };
 }
 
-// ES6 module export
 export default Minimap;

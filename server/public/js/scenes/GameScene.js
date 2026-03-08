@@ -269,9 +269,17 @@ class GameScene extends Phaser.Scene {
     const socketId = gameState.getSocketId();
     const minimapData = this.entityManager ? this.entityManager.getMinimapData() : {};
 
+    const starData = this.collectibleStars
+      ? this.collectibleStars.getChildren().map((star) => ({
+          x: star.x,
+          y: star.y
+        }))
+      : [];
+
     uiManager.updateMinimap({
       players: minimapData,
-      myId: socketId
+      myId: socketId,
+      stars: starData
     });
 
     uiManager.tick(this.cameras.main);

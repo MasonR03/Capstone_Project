@@ -170,7 +170,7 @@ class UIManager {
    */
   updateMinimap(data) {
     if (this.minimap) {
-      this.minimap.update(data.players, data.myId);
+      this.minimap.update(data.players, data.myId, data.stars || []);
     }
   }
 
