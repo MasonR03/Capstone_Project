@@ -183,4 +183,42 @@ router.get('/me', (req, res) => {
   res.status(401).json({ error: 'Not logged in.' });
 });
 
+router.get('/stats', async (req, res) => {
+  if (!req.session || !req.session.username) {
+    return res.status(401).json({ error: 'Not logged in.' });
+  }
+
+  const prisma = getPrismaClient();
+  if (!prisma) {
+    return res.status(503).json({ error: 'Database unavailable.' });
+  }
+
+  try {
+    const username = String(req.session.username).toLowerCase().trim();
+    const profile = await prisma.playerProfile.findUnique({
+      where: { username },
+      select: {
+        username: true,
+        email: true,
+        xp: true,
+        maxXp: true,
+        starsCollected: true,
+        gamesPlayed: true,
+        lastSeenAt: true,
+        createdAt: true,
+        updatedAt: true
+      }
+    });
+
+    if (!profile) {
+      return res.status(404).json({ error: 'Profile not found.' });
+    }
+
+    return res.json(profile);
+  } catch (err) {
+    console.error('Stats error:', err);
+    return res.status(500).json({ error: 'Internal server error.' });
+  }
+});
+
 module.exports = router;

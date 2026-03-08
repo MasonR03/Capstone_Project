@@ -12,6 +12,7 @@ import inputManager from '../managers/InputManager.js';
 import uiManager from '../managers/UIManager.js';
 import ClientEntityManager from '../managers/ClientEntityManager.js';
 import ShootingStarRenderer from '../managers/ShootingStarRenderer.js';
+import BulletRenderer from '../managers/BulletRenderer.js';
 
 class GameScene extends Phaser.Scene {
   constructor() {
@@ -19,6 +20,12 @@ class GameScene extends Phaser.Scene {
 
     // Entity manager for ships
     this.entityManager = null;
+
+    // Bullet renderer
+    this.bulletRenderer = null;
+
+    // Shooting cooldown (client-side rate limiter to avoid spamming server)
+    this._lastShootTime = 0;
 
     // Debug logging throttle
     this._lastClassLog = 0;
@@ -39,6 +46,9 @@ class GameScene extends Phaser.Scene {
 
     // Backdrop
     this.load.image('backdrop', GameConfig.assets.backdrop);
+
+    // Bullet
+    this.load.image('bullet', GameConfig.assets.bullet);
 
     // HUD
     this.load.image('hudBars', GameConfig.assets.hudBars);
@@ -82,6 +92,10 @@ class GameScene extends Phaser.Scene {
     // Shooting star renderer
     this.shootingStars = new ShootingStarRenderer(this, networkManager.getSocket());
     this.shootingStars.init();
+
+    // Bullet renderer
+    this.bulletRenderer = new BulletRenderer(this, networkManager.getSocket());
+    this.bulletRenderer.init();
 
     // Add world border visuals
     this._addWorldBorders();
@@ -153,6 +167,15 @@ class GameScene extends Phaser.Scene {
     // Send input to server
     if (networkManager.isConnected()) {
       networkManager.emitPlayerInput(input);
+
+      // Handle shooting (spacebar)
+      if (inputManager.isShootPressed()) {
+        const now = Date.now();
+        if (now - this._lastShootTime >= GameConfig.weapons.fireRate) {
+          this._lastShootTime = now;
+          networkManager.emitShoot();
+        }
+      }
     }
 
     // Update minimap
@@ -221,6 +244,35 @@ class GameScene extends Phaser.Scene {
     // Player disconnected
     socket.on('playerDisconnected', (playerId) => {
       this.entityManager.removeShip(playerId);
+    });
+
+    // Player killed
+    socket.on('playerKilled', (data) => {
+      const ship = this.entityManager.getShip(data.victimId);
+      if (ship && ship.sprite) {
+        ship.sprite.setAlpha(0.3);
+      }
+    });
+
+    // Player respawned
+    socket.on('playerRespawned', (data) => {
+      const ship = this.entityManager.getShip(data.playerId);
+      if (ship) {
+        if (ship.sprite) {
+          ship.sprite.setAlpha(1);
+        }
+        // Snap to new position
+        ship.x = data.x;
+        ship.y = data.y;
+        ship.serverState.x = data.x;
+        ship.serverState.y = data.y;
+        if (this.entityManager.isLocalPlayer(data.playerId)) {
+          ship.predicted.x = data.x;
+          ship.predicted.y = data.y;
+          ship.predicted.vx = 0;
+          ship.predicted.vy = 0;
+        }
+      }
     });
 
     // Player updates (game tick)

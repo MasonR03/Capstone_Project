@@ -12,6 +12,7 @@ import LevelPanel from '../ui/LevelPanel.js';
 import Minimap from '../ui/minimap.js';
 import { ClassPicker } from '../ui/ClassPicker.js';
 import debugTools from '../ui/DebugTools.js';
+import statsTools from '../ui/StatsTools.js';
 
 class UIManager {
   /**
@@ -77,6 +78,7 @@ class UIManager {
 
     // Initialize debug tools
     debugTools.init(game, () => this._getDebugPlayerInfo());
+    statsTools.init(game);
 
     console.log('UIManager initialized');
 
@@ -203,6 +205,27 @@ class UIManager {
   }
 
   /**
+   * Show stats panel
+   */
+  showStats() {
+    statsTools.show();
+  }
+
+  /**
+   * Hide stats panel
+   */
+  hideStats() {
+    statsTools.hide();
+  }
+
+  /**
+   * Toggle stats panel
+   */
+  toggleStats() {
+    statsTools.toggle();
+  }
+
+  /**
    * Destroy all UI components
    */
   destroy() {
@@ -223,6 +246,7 @@ class UIManager {
       this.classPicker = null;
     }
     debugTools.destroy();
+    statsTools.destroy();
   }
 }
 
