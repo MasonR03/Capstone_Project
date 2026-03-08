@@ -13,34 +13,75 @@ import uiManager from '../managers/UIManager.js';
 import ClientEntityManager from '../managers/ClientEntityManager.js';
 import ShootingStarRenderer from '../managers/ShootingStarRenderer.js';
 import BulletRenderer from '../managers/BulletRenderer.js';
+import {
+  PLAYER_PROGRESS_DEFAULTS,
+  cloneProgress
+} from '../stats/stats.js';
 
 class GameScene extends Phaser.Scene {
   constructor() {
     super({ key: 'GameScene' });
 
-    // Entity manager for ships
+    // Managers
     this.entityManager = null;
-
-    // Bullet renderer
     this.bulletRenderer = null;
 
-    // Shooting cooldown (client-side rate limiter to avoid spamming server)
+    // Client state
     this._lastShootTime = 0;
-
-    // Debug logging throttle
     this._lastClassLog = 0;
-
-    // Camera follow flag
     this._cameraFollowSet = false;
+
+    // Progress
+    this.playerProgress = cloneProgress(PLAYER_PROGRESS_DEFAULTS);
+
+    // Progress sync
+    this._lastProgressSync = '';
+    this._lastProgressSyncTime = 0;
+
+    // Collectibles
+    this.collectibleStars = null;
+  }
+
+     /**
+   * Build the payload used to sync class and progress.
+   *
+   * @returns {Object}
+   * @private
+   */
+  _buildClassSyncPayload() {
+    const currentProgress = gameState.getPlayerProgress();
+    const currentClassKey =
+      currentProgress.selectedShip ||
+      gameState.getChosenClassKey() ||
+      GameConfig.defaultClass;
+
+    return {
+      classKey: currentClassKey,
+      progress: currentProgress
+    };
   }
 
   /**
-   * Preload assets
+   * Sync the current class and progress to the server.
+   *
+   * @private
+   */
+  _syncClassProgressToServer() {
+    if (!networkManager.isConnected()) return;
+    if (!gameState.isClassChosen()) return;
+
+    const payload = this._buildClassSyncPayload();
+    networkManager.emitChooseClass(payload);
+  }
+
+  /**
+   * Preload assets.
    */
   preload() {
     console.log('Preloading assets...');
 
     // Ships
+    this.load.image('ship_starter', GameConfig.assets.ships.starter);
     this.load.image('ship_hunter', GameConfig.assets.ships.hunter);
     this.load.image('ship_tanker', GameConfig.assets.ships.tanker);
 
@@ -62,7 +103,7 @@ class GameScene extends Phaser.Scene {
   }
 
   /**
-   * Create scene elements
+   * Create scene elements.
    */
   create() {
     console.log('GameScene create() running');
@@ -70,11 +111,11 @@ class GameScene extends Phaser.Scene {
     const WORLD_W = GameConfig.world.width;
     const WORLD_H = GameConfig.world.height;
 
-    // Set world bounds
+    // World bounds
     this.physics.world.setBounds(0, 0, WORLD_W, WORLD_H);
     this.cameras.main.setBounds(0, 0, WORLD_W, WORLD_H);
 
-    // Generate soft glow particle texture for ship trails
+    // Glow particle texture
     const glowCanvas = this.textures.createCanvas('glow_particle', 32, 32);
     const ctx = glowCanvas.getContext();
     const gradient = ctx.createRadialGradient(16, 16, 0, 16, 16, 16);
@@ -84,93 +125,125 @@ class GameScene extends Phaser.Scene {
     ctx.fillRect(0, 0, 32, 32);
     glowCanvas.refresh();
 
-    // Add tiled backdrop covering the entire world
+    // Backdrop
     this.add.tileSprite(0, 0, WORLD_W, WORLD_H, 'backdrop')
       .setOrigin(0, 0)
       .setDepth(-1);
 
-    // Shooting star renderer
+    // Effects
     this.shootingStars = new ShootingStarRenderer(this, networkManager.getSocket());
     this.shootingStars.init();
 
-    // Bullet renderer
     this.bulletRenderer = new BulletRenderer(this, networkManager.getSocket());
     this.bulletRenderer.init();
 
-    // Add world border visuals
+    // Borders
     this._addWorldBorders();
 
-    // Center camera initially
+    // Camera
     this.cameras.main.centerOn(WORLD_W / 2, WORLD_H / 2);
     this.cameras.main.setZoom(GameConfig.camera.initialZoom);
 
-    // Initialize entity manager
+    // Managers
     this.entityManager = new ClientEntityManager(this);
-
-    // Initialize input manager
     inputManager.init(this);
 
-    // Initialize UI manager
     uiManager.init(this, this.game, {
-      world: { width: WORLD_W, height: WORLD_H }
+      world: { width: WORLD_W, height: WORLD_H },
+      progress: this.playerProgress
     });
+
+    gameState.setPlayerProgress(this.playerProgress);
 
     // Open class picker
     uiManager.openClassPicker((pickedKey) => {
-      const classKey = GameConfig.shipClasses[pickedKey] ? pickedKey : GameConfig.defaultClass;
+      const classKey = this._isOwnedShip(pickedKey)
+        ? pickedKey
+        : (this.playerProgress.selectedShip || GameConfig.defaultClass);
+
       gameState.setClassChoice(classKey);
+      this.playerProgress.selectedShip = classKey;
+      gameState.setPlayerProgress(this.playerProgress);
+      uiManager.setPlayerProgress(this.playerProgress);
+
       console.log('Picked class:', classKey);
 
-      // Enable input now that class is chosen
       inputManager.enable();
 
-      // Send to server if connected
       if (networkManager.isConnected()) {
-        networkManager.emitChooseClass(classKey);
+        networkManager.emitChooseClass({
+          classKey,
+          progress: this.playerProgress
+        });
       } else {
         console.warn('Socket not ready, will send class on connect');
       }
+    }, {
+      progress: this.playerProgress
     });
 
-    // Set up socket event handlers
-    this._setupSocketHandlers();
+    // Collectible stars
+    this.collectibleStars = this.physics.add.group({
+      allowGravity: false,
+      immovable: true
+    });
 
-    // Set up socket event handlers is enough — session auth means server
-    // already knows our username on connect, no setPlayerName needed.
+    this.time.addEvent({
+      delay: 3000,
+      loop: true,
+      callback: () => {
+        this.spawnCollectibleStar();
+      }
+    });
+
+    // Passive point gain
+    this.time.addEvent({
+      delay: 1000,
+      loop: true,
+      callback: () => {
+        if (!gameState.isClassChosen()) return;
+
+        if (uiManager.levelPanel && uiManager.levelPanel.addPoint) {
+          uiManager.levelPanel.addPoint(1);
+          this.playerProgress = uiManager.getPlayerProgress();
+          gameState.setPlayerProgress(this.playerProgress);
+        }
+      }
+    });
+
+    this._setupSocketHandlers();
   }
 
   /**
-   * Update loop
+   * Update loop.
+   *
+   * @param {number} time
+   * @param {number} delta
    */
   update(time, delta) {
-    // Shooting stars run regardless of game state
     this.shootingStars.update(delta);
 
-    // Don't process until class is chosen
     if (!gameState.isClassChosen()) return;
 
-    const dt = delta / 1000; // Convert to seconds
+    const dt = delta / 1000;
 
-    // Ensure camera is following (fallback for timing issues)
     this._ensureCameraFollow();
 
-    // Get current input
     const input = inputManager.getCurrentInput();
 
-    // Apply prediction for local player (smooth movement)
     if (this.entityManager) {
       this.entityManager.applyLocalPrediction(input, dt);
-      // Interpolate remote players
       this.entityManager.updateAll();
     }
 
-    // Send input to server
+    this._checkLocalStarCollection();
+
     if (networkManager.isConnected()) {
       networkManager.emitPlayerInput(input);
 
-      // Handle shooting (spacebar)
       if (inputManager.isShootPressed()) {
         const now = Date.now();
+
         if (now - this._lastShootTime >= GameConfig.weapons.fireRate) {
           this._lastShootTime = now;
           networkManager.emitShoot();
@@ -178,7 +251,21 @@ class GameScene extends Phaser.Scene {
       }
     }
 
-    // Update minimap
+    // Sync progress changes to the server
+    const latestProgress = gameState.getPlayerProgress();
+    const progressJson = JSON.stringify(latestProgress);
+    const now = Date.now();
+
+    if (
+      progressJson !== this._lastProgressSync &&
+      now - this._lastProgressSyncTime > 150
+    ) {
+      this.playerProgress = latestProgress;
+      this._lastProgressSync = progressJson;
+      this._lastProgressSyncTime = now;
+      this._syncClassProgressToServer();
+    }
+
     const socketId = gameState.getSocketId();
     const minimapData = this.entityManager ? this.entityManager.getMinimapData() : {};
 
@@ -187,12 +274,12 @@ class GameScene extends Phaser.Scene {
       myId: socketId
     });
 
-    // UI tick
     uiManager.tick(this.cameras.main);
   }
 
   /**
-   * Add visual border rectangles around the world
+   * Add world border visuals.
+   *
    * @private
    */
   _addWorldBorders() {
@@ -201,18 +288,128 @@ class GameScene extends Phaser.Scene {
     const borderWidth = GameConfig.world.borderWidth;
     const borderColor = 0x880000;
 
-    // Top
     this.add.rectangle(WORLD_W / 2, borderWidth / 2, WORLD_W, borderWidth, borderColor).setDepth(0);
-    // Bottom
     this.add.rectangle(WORLD_W / 2, WORLD_H - borderWidth / 2, WORLD_W, borderWidth, borderColor).setDepth(0);
-    // Left
     this.add.rectangle(borderWidth / 2, WORLD_H / 2, borderWidth, WORLD_H, borderColor).setDepth(0);
-    // Right
     this.add.rectangle(WORLD_W - borderWidth / 2, WORLD_H / 2, borderWidth, WORLD_H, borderColor).setDepth(0);
   }
 
   /**
-   * Set up socket event handlers
+   * Check if a ship is unlocked.
+   *
+   * @param {string} shipKey
+   * @returns {boolean}
+   * @private
+   */
+  _isOwnedShip(shipKey) {
+    return Array.isArray(this.playerProgress.unlockedShips)
+      && this.playerProgress.unlockedShips.includes(shipKey);
+  }
+
+  /**
+   * Spawn a collectible star.
+   */
+  spawnCollectibleStar() {
+    if (!this.collectibleStars) return;
+
+    const x = Phaser.Math.Between(100, GameConfig.world.width - 100);
+    const y = Phaser.Math.Between(100, GameConfig.world.height - 100);
+
+    const star = this.collectibleStars.create(x, y, 'glow_particle');
+    if (!star) return;
+
+    star.setScale(0.55);
+    star.setAlpha(0.9);
+    star.setDepth(2);
+
+    star.xpValue = 10;
+    star.pointValue = 1;
+
+    this.tweens.add({
+      targets: star,
+      alpha: 0.45,
+      scale: 0.42,
+      duration: 650,
+      yoyo: true,
+      repeat: -1
+    });
+  }
+
+  /**
+   * Check for local star collection.
+   *
+   * @private
+   */
+  _checkLocalStarCollection() {
+    if (!this.entityManager || !this.collectibleStars) return;
+
+    const localShip = this.entityManager.getLocalShip
+      ? this.entityManager.getLocalShip()
+      : null;
+
+    if (!localShip) return;
+
+    const localX = localShip.predicted?.x ?? localShip.x ?? localShip.serverState?.x;
+    const localY = localShip.predicted?.y ?? localShip.y ?? localShip.serverState?.y;
+
+    if (typeof localX !== 'number' || typeof localY !== 'number') return;
+
+    const stars = this.collectibleStars.getChildren();
+
+    for (let i = 0; i < stars.length; i++) {
+      const star = stars[i];
+      if (!star || !star.active) continue;
+
+      const dist = Phaser.Math.Distance.Between(localX, localY, star.x, star.y);
+      if (dist <= 40) {
+        this.collectStar(star);
+      }
+    }
+  }
+
+  /**
+   * Handle a collected star.
+   *
+   * @param {*} star
+   */
+  collectStar(star) {
+    if (!star || !star.active) return;
+
+    const x = star.x;
+    const y = star.y;
+    const xpValue = star.xpValue || 10;
+    const pointValue = star.pointValue || 1;
+
+    star.destroy();
+
+    if (uiManager.levelPanel) {
+      if (uiManager.levelPanel.gainXp) {
+        uiManager.levelPanel.gainXp(xpValue);
+      }
+
+      if (uiManager.levelPanel.addPoint) {
+        uiManager.levelPanel.addPoint(pointValue);
+      }
+
+      this.playerProgress = uiManager.getPlayerProgress();
+      gameState.setPlayerProgress(this.playerProgress);
+    }
+
+    const particles = this.add.particles(x, y, 'glow_particle', {
+      speed: { min: 20, max: 90 },
+      scale: { start: 0.35, end: 0 },
+      lifespan: 420,
+      quantity: 12
+    });
+
+    this.time.delayedCall(450, () => {
+      if (particles) particles.destroy();
+    });
+  }
+
+  /**
+   * Set up socket handlers.
+   *
    * @private
    */
   _setupSocketHandlers() {
@@ -222,7 +419,6 @@ class GameScene extends Phaser.Scene {
       return;
     }
 
-    // Current players (initial state)
     socket.on('currentPlayers', (players) => {
       console.log('currentPlayers:', Object.keys(players).length);
 
@@ -236,17 +432,14 @@ class GameScene extends Phaser.Scene {
       this._ensureCameraFollow();
     });
 
-    // New player joined
     socket.on('newPlayer', (playerInfo) => {
       this.entityManager.addOrUpdateShip(playerInfo);
     });
 
-    // Player disconnected
     socket.on('playerDisconnected', (playerId) => {
       this.entityManager.removeShip(playerId);
     });
 
-    // Player killed
     socket.on('playerKilled', (data) => {
       const ship = this.entityManager.getShip(data.victimId);
       if (ship && ship.sprite) {
@@ -254,18 +447,18 @@ class GameScene extends Phaser.Scene {
       }
     });
 
-    // Player respawned
     socket.on('playerRespawned', (data) => {
       const ship = this.entityManager.getShip(data.playerId);
       if (ship) {
         if (ship.sprite) {
           ship.sprite.setAlpha(1);
         }
-        // Snap to new position
+
         ship.x = data.x;
         ship.y = data.y;
         ship.serverState.x = data.x;
         ship.serverState.y = data.y;
+
         if (this.entityManager.isLocalPlayer(data.playerId)) {
           ship.predicted.x = data.x;
           ship.predicted.y = data.y;
@@ -275,20 +468,16 @@ class GameScene extends Phaser.Scene {
       }
     });
 
-    // Player updates (game tick)
     socket.on('playerUpdates', (data) => {
       const serverPlayers = data.players;
       const socketId = gameState.getSocketId();
 
-      // Ensure local player is set
       if (socketId && !this.entityManager.localPlayerId) {
         this.entityManager.setLocalPlayer(socketId);
       }
 
-      // Process updates through entity manager
       this.entityManager.processServerUpdate(serverPlayers, {
         onLocalPlayerUpdate: (serverState) => {
-          // Update local player stats for HUD
           gameState.updateLocalPlayerStats({
             hp: serverState.hp,
             maxHp: serverState.maxHp,
@@ -298,7 +487,6 @@ class GameScene extends Phaser.Scene {
 
           uiManager.updateHpXp(gameState.getLocalPlayerStats());
 
-          // Throttled debug logging
           const chosenClassKey = gameState.getChosenClassKey();
           if (!this._lastClassLog || Date.now() - this._lastClassLog > 1500) {
             console.log('server classKey:', serverState.classKey, '| local chosen:', chosenClassKey);
@@ -312,7 +500,8 @@ class GameScene extends Phaser.Scene {
   }
 
   /**
-   * Ensure camera follows local player
+   * Ensure camera follows the local player.
+   *
    * @private
    */
   _ensureCameraFollow() {
@@ -328,7 +517,6 @@ class GameScene extends Phaser.Scene {
   }
 }
 
-// Export for ES6 modules and browser global
 if (typeof window !== 'undefined') {
   window.GameScene = GameScene;
 }

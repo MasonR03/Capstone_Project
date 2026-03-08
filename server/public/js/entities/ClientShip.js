@@ -157,8 +157,9 @@ class ClientShip {
   }
 
   /**
-   * Update from server state
-   * @param {Object} serverState - State received from server
+   * Update from server state.
+   *
+   * @param {Object} serverState
    */
   updateFromServer(serverState) {
     this.serverState = {
@@ -170,9 +171,18 @@ class ClientShip {
       timestamp: Date.now()
     };
 
-    // Update class if server changed it
+    // Update class visuals if needed
     if (serverState.classKey && serverState.classKey !== this.classKey) {
       this._applyClassKey(serverState.classKey);
+    }
+
+    // Update live movement stats from server
+    if (Number.isFinite(serverState.maxSpeed)) {
+      this.stats.maxSpeed = serverState.maxSpeed;
+    }
+
+    if (Number.isFinite(serverState.acceleration)) {
+      this.stats.acceleration = serverState.acceleration;
     }
 
     // Update player name if changed
@@ -191,31 +201,39 @@ class ClientShip {
   }
 
   /**
-   * Apply a new class key and update visuals/stats
+   * Apply a new class key and update visuals/stats.
+   *
    * @param {string} newClassKey
    * @private
    */
   _applyClassKey(newClassKey) {
-    const classConfig = GameConfig.shipClasses[newClassKey] || GameConfig.shipClasses[GameConfig.defaultClass];
-    const safeKey = classConfig ? newClassKey : GameConfig.defaultClass;
+    const hasClass = !!GameConfig.shipClasses[newClassKey];
+    const safeKey = hasClass ? newClassKey : GameConfig.defaultClass;
+    const classConfig = GameConfig.shipClasses[safeKey];
 
     this.classKey = safeKey;
     this.stats.maxSpeed = classConfig.stats.speed || this.stats.maxSpeed;
     this.stats.acceleration = classConfig.stats.accel || this.stats.acceleration;
 
     const spriteKey = classConfig.spriteKey;
-    if (this.sprite && typeof this.sprite.setTexture === 'function' && this.scene.textures.exists(spriteKey)) {
+
+    if (
+      this.sprite &&
+      typeof this.sprite.setTexture === 'function' &&
+      this.scene.textures.exists(spriteKey)
+    ) {
       this.sprite.setTexture(spriteKey);
       this.sprite.setDisplaySize(GameConfig.sprites.ship.width, GameConfig.sprites.ship.height);
       this._applyTeamTint();
       return;
     }
 
-    // Fallback: rebuild sprite if texture swap isn't possible
+    // Fallback
     if (this.sprite) {
       this.sprite.destroy();
       this.sprite = null;
     }
+
     this._createSprite({});
   }
 

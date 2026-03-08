@@ -68,7 +68,7 @@ class ClassPicker {
     this.classKeys = Object.keys(this.shipClasses);
     this.isOpen = false;
 
-    // UI elements
+    // UI
     this.overlay = null;
     this.rows = [];
     this.keyboardHandler = null;
@@ -83,7 +83,7 @@ class ClassPicker {
   }
 
   /**
-   * Set the first owned ship as selected.
+   * Pick the first owned ship for the default cursor position.
    *
    * @private
    */
@@ -93,13 +93,11 @@ class ClassPicker {
   }
 
   /**
-   * Create the picker UI.
+   * Create the picker.
    *
    * @private
    */
   _create() {
-    console.log('~~~ ClassPicker created ~~~');
-
     try {
       if (document.activeElement && document.activeElement.blur) {
         document.activeElement.blur();
@@ -149,7 +147,7 @@ class ClassPicker {
   }
 
   /**
-   * Build the ship selection rows.
+   * Build the ship rows.
    *
    * @param {Phaser.Cameras.Scene2D.Camera} cam
    * @private
@@ -198,11 +196,16 @@ class ClassPicker {
       row.add(nameText);
 
       const st = getShipStats(key, this.progress) || classCfg.stats;
-      const statsText = this.scene.add.text(statsX, -2, `HP ${st.maxHp}   SPD ${st.speed}   ACC ${st.accel}`, {
-        fontSize: '14px',
-        fill: '#b8d7e2',
-        fontFamily: 'Orbitron, monospace'
-      }).setOrigin(0, 0.5);
+      const statsText = this.scene.add.text(
+        statsX,
+        -2,
+        `HP ${st.maxHp}   SPD ${st.speed}   ACC ${st.accel}`,
+        {
+          fontSize: '14px',
+          fill: '#b8d7e2',
+          fontFamily: 'Orbitron, monospace'
+        }
+      ).setOrigin(0, 0.5);
       row.add(statsText);
 
       const tag = this.scene.add.text(tagX, -10, '', {
@@ -247,7 +250,7 @@ class ClassPicker {
   }
 
   /**
-   * Set up keyboard navigation.
+   * Set up keyboard input.
    *
    * @private
    */
@@ -276,37 +279,6 @@ class ClassPicker {
         return;
       }
 
-      if (code === 'Digit1' || code === 'Numpad1') {
-        this.selectedIndex = 0;
-        this._refresh();
-        if (this._isOwned(this.classKeys[this.selectedIndex])) {
-          this._complete(this.classKeys[this.selectedIndex]);
-        }
-        return;
-      }
-
-      if (code === 'Digit2' || code === 'Numpad2') {
-        if (this.classKeys.length > 1) {
-          this.selectedIndex = 1;
-          this._refresh();
-          if (this._isOwned(this.classKeys[this.selectedIndex])) {
-            this._complete(this.classKeys[this.selectedIndex]);
-          }
-        }
-        return;
-      }
-
-      if (code === 'Digit3' || code === 'Numpad3') {
-        if (this.classKeys.length > 2) {
-          this.selectedIndex = 2;
-          this._refresh();
-          if (this._isOwned(this.classKeys[this.selectedIndex])) {
-            this._complete(this.classKeys[this.selectedIndex]);
-          }
-        }
-        return;
-      }
-
       if (code === 'Escape') {
         this._complete(this.defaultClass);
       }
@@ -327,7 +299,7 @@ class ClassPicker {
   }
 
   /**
-   * Refresh visual state.
+   * Refresh row visuals.
    *
    * @private
    */
@@ -365,7 +337,7 @@ class ClassPicker {
   }
 
   /**
-   * Update progress and redraw state.
+   * Update progress state.
    *
    * @param {Object} progress
    */
@@ -375,7 +347,7 @@ class ClassPicker {
   }
 
   /**
-   * Complete selection and clean up.
+   * Finish the selection.
    *
    * @param {string} classKey
    * @private
@@ -389,7 +361,7 @@ class ClassPicker {
   }
 
   /**
-   * Clean up UI elements.
+   * Clean up the picker.
    *
    * @private
    */
@@ -409,7 +381,7 @@ class ClassPicker {
   }
 
   /**
-   * Check if picker is open.
+   * Check if picker is visible.
    *
    * @returns {boolean}
    */
@@ -418,7 +390,7 @@ class ClassPicker {
   }
 
   /**
-   * Force close picker.
+   * Force close the picker.
    */
   close() {
     if (this.isOpen) {
@@ -428,7 +400,7 @@ class ClassPicker {
 }
 
 /**
- * Backward compatible helper.
+ * Backward-compatible helper.
  *
  * @param {Phaser.Scene} scene
  * @param {Function} onPick

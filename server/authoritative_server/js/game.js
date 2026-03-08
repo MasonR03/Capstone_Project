@@ -21,12 +21,44 @@ const WORLD_WIDTH = 2000;
 const WORLD_HEIGHT = 2000;
 const BORDER_BUFFER = 20;
 
-// Ship class definitions (server-side)
+/**
+ * Ship class definitions.
+ */
 const SHIP_CLASSES = {
+  starter: { maxHp: 110, speed: 210, accel: 190 },
   hunter: { maxHp: 90, speed: 260, accel: 220 },
   tanker: { maxHp: 160, speed: 180, accel: 160 }
 };
-const DEFAULT_CLASS = 'hunter';
+
+const DEFAULT_CLASS = 'starter';
+
+/**
+ * Resolve final ship stats from class and progress.
+ *
+ * @param {string} classKey
+ * @param {Object} progress
+ * @returns {{maxHp:number,speed:number,accel:number}}
+ */
+function getResolvedShipStats(classKey, progress = {}) {
+  const safeKey = SHIP_CLASSES[classKey] ? classKey : DEFAULT_CLASS;
+  const base = SHIP_CLASSES[safeKey];
+
+  const shipProgress = progress?.shipProgress?.[safeKey] || {
+    upgrades: {
+      maxHp: 0,
+      speed: 0,
+      accel: 0
+    }
+  };
+
+  const upgrades = shipProgress.upgrades || {};
+
+  return {
+    maxHp: base.maxHp + ((upgrades.maxHp || 0) * 10),
+    speed: base.speed + ((upgrades.speed || 0) * 8),
+    accel: base.accel + ((upgrades.accel || 0) * 8)
+  };
+}
 
 // Weapon config (server-side)
 const WEAPON_CONFIG = {
@@ -110,7 +142,49 @@ function initializeServer(io) {
     const startX = Math.floor(Math.random() * (WORLD_WIDTH - 100)) + 50;
     const startY = Math.floor(Math.random() * (WORLD_HEIGHT - 100)) + 50;
 
-    const classConfig = SHIP_CLASSES[DEFAULT_CLASS];
+        const initialProgress = {
+      points: 0,
+      unlockedShips: ['starter'],
+      selectedShip: 'starter',
+      shipProgress: {
+        starter: {
+          level: 1,
+          xp: 0,
+          maxXp: 100,
+          unspentStatPoints: 0,
+          upgrades: {
+            maxHp: 0,
+            speed: 0,
+            accel: 0
+          }
+        },
+        hunter: {
+          level: 1,
+          xp: 0,
+          maxXp: 100,
+          unspentStatPoints: 0,
+          upgrades: {
+            maxHp: 0,
+            speed: 0,
+            accel: 0
+          }
+        },
+        tanker: {
+          level: 1,
+          xp: 0,
+          maxXp: 100,
+          unspentStatPoints: 0,
+          upgrades: {
+            maxHp: 0,
+            speed: 0,
+            accel: 0
+          }
+        }
+      }
+    };
+
+    const classConfig = getResolvedShipStats(DEFAULT_CLASS, initialProgress);
+
     const ship = entityManager.createShip(socket.id, startX, startY, {
       team: 'neutral',
       classKey: DEFAULT_CLASS,
@@ -119,6 +193,8 @@ function initializeServer(io) {
       maxHp: classConfig.maxHp,
       hp: classConfig.maxHp
     });
+
+    socket.data.playerProgress = initialProgress;
 
     // Set player name from session (already authenticated)
     ship.setPlayerName(username);
@@ -173,26 +249,48 @@ function initializeServer(io) {
         });
     }
 
-    // Handle class selection from client
+     /**
+     * Handle class selection and progress sync from client.
+     */
     socket.on('chooseClass', (payload) => {
       const ship = entityManager.getShip(socket.id);
       if (!ship) return;
 
       const requestedKey = typeof payload === 'string' ? payload : payload?.classKey;
       const safeKey = SHIP_CLASSES[requestedKey] ? requestedKey : DEFAULT_CLASS;
-      const cfg = SHIP_CLASSES[safeKey];
+
+      const progress = payload?.progress || socket.data.playerProgress || {
+        starterUpgrades: {
+          maxHp: 0,
+          speed: 0,
+          accel: 0
+        }
+      };
+
+      socket.data.playerProgress = progress;
+
+      const cfg = getResolvedShipStats(safeKey, progress);
 
       ship.classKey = safeKey;
       ship.stats.maxSpeed = cfg.speed;
       ship.stats.acceleration = cfg.accel;
       ship.maxHp = cfg.maxHp;
-      ship.hp = Math.min(ship.hp, ship.maxHp) || ship.maxHp;
+
+      // Keep HP valid and let HP upgrade fill the bar
+      ship.hp = ship.maxHp;
 
       if (ship.body) {
         ship.body.setMaxVelocity(ship.stats.maxSpeed);
       }
 
-      console.log('🚀 Player', ship.getDisplayName(), 'chose class:', safeKey);
+      console.log(
+        '🚀 Player',
+        ship.getDisplayName(),
+        'synced class:',
+        safeKey,
+        'stats:',
+        cfg
+      );
     });
 
 
