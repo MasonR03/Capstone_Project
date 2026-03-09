@@ -122,6 +122,7 @@ void (async () => {
       );
       console.warn(schemaErr);
     }
+    
 
     // Ensure session table exists
     try {

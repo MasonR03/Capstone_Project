@@ -11,6 +11,8 @@ class InputManager {
     this.cursors = null;
     this.enabled = false;
     this._fullscreenKey = null;
+    this._shootKey = null;
+    this.shootPressed = false;
   }
 
   /**
@@ -35,6 +37,9 @@ class InputManager {
       up: Phaser.Input.Keyboard.KeyCodes.W,
       down: Phaser.Input.Keyboard.KeyCodes.S
     });
+
+    // Shoot key (spacebar)
+    this._shootKey = scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
 
     // Fullscreen toggle
     this._fullscreenKey = scene.input.keyboard.on('keydown-F', () => {
@@ -84,6 +89,15 @@ class InputManager {
       up: !!this.cursors.up.isDown || !!this.wasd.up.isDown,
       down: !!this.cursors.down.isDown || !!this.wasd.down.isDown
     };
+  }
+
+  /**
+   * Check if shoot key is currently held down
+   * @returns {boolean}
+   */
+  isShootPressed() {
+    if (!this.enabled || !this._shootKey) return false;
+    return this._shootKey.isDown;
   }
 
   /**
@@ -166,6 +180,7 @@ class InputManager {
     }
     this.cursors = null;
     this.wasd = null;
+    this._shootKey = null;
     this.scene = null;
     this.enabled = false;
   }

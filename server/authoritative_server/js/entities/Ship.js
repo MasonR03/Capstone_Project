@@ -205,27 +205,32 @@ class Ship {
     return this.xp >= this.maxXp;
   }
 
-  /**
-   * Serialize ship state for network transmission
-   * @returns {Object} - Ship state object
+    /**
+   * Serialize ship state for network transmission.
+   *
+   * @returns {Object}
    */
-  serialize() {
-    return {
-      playerId: this.id,
-      classKey: this.classKey,
-      x: this.x,
-      y: this.y,
-      rotation: this.rotation,
-      velocityX: this.velocityX,
-      velocityY: this.velocityY,
-      angularVelocity: this.angularVelocity,
-      team: this.team,
-      hp: this.hp,
-      maxHp: this.maxHp,
-      xp: this.xp,
-      maxXp: this.maxXp
-    };
-  }
+    serialize() {
+      return {
+        playerId: this.id,
+        classKey: this.classKey,
+        x: this.x,
+        y: this.y,
+        rotation: this.rotation,
+        velocityX: this.velocityX,
+        velocityY: this.velocityY,
+        angularVelocity: this.angularVelocity,
+        team: this.team,
+        hp: this.hp,
+        maxHp: this.maxHp,
+        xp: this.xp,
+        maxXp: this.maxXp,
+
+        // Live movement stats
+        maxSpeed: this.stats?.maxSpeed ?? 0,
+        acceleration: this.stats?.acceleration ?? 0
+      };
+    }
 
   /**
    * Clean up resources when ship is destroyed

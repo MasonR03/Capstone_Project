@@ -38,8 +38,23 @@ router.post('/signup', async (req, res) => {
 
   const prisma = getPrismaClient();
   if (!prisma) {
+    // Dev fallback (no DB)
+    if (process.env.NODE_ENV !== 'production') {
+      const input = String(username).trim().toLowerCase();
+      const devUser = (process.env.DEV_USER_USERNAME || 'test').toLowerCase();
+      const devPass = process.env.DEV_USER_PASSWORD || 'Password123!';
+
+      if (input === devUser && password === devPass) {
+        req.session.username = devUser;
+        return res.json({ username: devUser });
+      }
+
+      return res.status(401).json({ error: 'Invalid username/email or password.' });
+    }
+
     return res.status(503).json({ error: 'Database unavailable.' });
   }
+
 
   const normalizedEmail = email.toLowerCase().trim();
   const normalizedUsername = username.toLowerCase();
@@ -100,8 +115,24 @@ router.post('/login', async (req, res) => {
 
   const prisma = getPrismaClient();
   if (!prisma) {
+    // Dev fallback (no DB)
+    if (process.env.NODE_ENV !== 'production') {
+      const input = String(username).trim().toLowerCase();
+      const devUser = (process.env.DEV_USER_USERNAME || 'test').toLowerCase();
+      const devPass = process.env.DEV_USER_PASSWORD || 'Password123!';
+
+      // Allow "test" login without DB
+      if (input === devUser && password === devPass) {
+        req.session.username = devUser;
+        return res.json({ username: devUser });
+      }
+
+      return res.status(401).json({ error: 'Invalid username/email or password.' });
+    }
+
     return res.status(503).json({ error: 'Database unavailable.' });
   }
+
 
   try {
     const input = username.trim().toLowerCase();

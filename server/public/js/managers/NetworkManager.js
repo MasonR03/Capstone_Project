@@ -177,21 +177,46 @@ class NetworkManager {
   }
 
   /**
-   * Emit class choice
-   * @param {string} classKey - The chosen class key
+   * Emit a shoot event to the server
    */
-  emitChooseClass(classKey) {
-    const safeKey = GameConfig.shipClasses[classKey] ? classKey : GameConfig.defaultClass;
+  emitShoot() {
+    this.emit('playerShoot');
+  }
+
+  /**
+   * Emit class choice.
+   *
+   * @param {string|Object} payload
+   */
+  emitChooseClass(payload) {
+    let requestedClassKey = null;
+    let progress = null;
+
+    if (typeof payload === 'string') {
+      requestedClassKey = payload;
+    } else if (payload && typeof payload === 'object') {
+      requestedClassKey = payload.classKey;
+      progress = payload.progress || null;
+    }
+
+    const safeKey = GameConfig.shipClasses[requestedClassKey]
+      ? requestedClassKey
+      : GameConfig.defaultClass;
+
     const socketId = gameState.getSocketId();
     const myId = gameState.getMyId();
 
-    // Send the event
-    this.emit('chooseClass', { classKey: safeKey });
+    const finalPayload = {
+      classKey: safeKey,
+      playerId: socketId,
+      playerName: myId
+    };
 
-    // Also send a richer payload (harmless if server ignores)
-    this.emit('chooseClass', { classKey: safeKey, playerId: socketId, playerName: myId });
+    if (progress) {
+      finalPayload.progress = progress;
+    }
 
-    // Update state
+    this.emit('chooseClass', finalPayload);
     gameState.setClassChoice(safeKey);
   }
 
