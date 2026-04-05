@@ -76,27 +76,28 @@ class Minimap {
     const cam = this.scene.cameras.main;
 
     this.container = this.scene.add.container(0, 0)
+      .setScrollFactor(0)
       .setDepth(2000);
 
     // Circular mask drawn in local container space
-    this.maskGraphics = this.scene.add.graphics();
+    this.maskGraphics = this.scene.add.graphics().setScrollFactor(0);
     this.maskGraphics.fillStyle(0xffffff, 1);
     this.maskGraphics.fillCircle(0, 0, this.radius);
     this.maskGraphics.setVisible(false);
 
     // Main draw layer in local container space
-    this.graphics = this.scene.add.graphics();
+    this.graphics = this.scene.add.graphics().setScrollFactor(0);
 
     const geoMask = this.maskGraphics.createGeometryMask();
     this.graphics.setMask(geoMask);
 
     // Ring border
-    this.ringGraphics = this.scene.add.graphics();
+    this.ringGraphics = this.scene.add.graphics().setScrollFactor(0);
     this.ringGraphics.lineStyle(3, this.colors.border, 1);
     this.ringGraphics.strokeCircle(0, 0, this.radius);
 
     // Background
-    this.bgGraphics = this.scene.add.graphics();
+    this.bgGraphics = this.scene.add.graphics().setScrollFactor(0);
     this.bgGraphics.fillStyle(0x000000, 0.45);
     this.bgGraphics.fillCircle(0, 0, this.radius);
 
@@ -118,15 +119,17 @@ class Minimap {
   anchor() {
     const cam = this.scene.cameras.main;
     const z = cam.zoom || 1;
-    // Visible area in world coordinates
-    const visW = cam.width / z;
-    const visH = cam.height / z;
-    // Position in world space at bottom-right of visible area
-    const pad = (this.size / 2 + this.margin) / z;
+    // Phaser camera transform for scrollFactor(0):
+    //   screenX = (objX - camW/2) * zoom + camW/2
+    // Solving for objX given desired screenX:
+    //   objX = camW/2 + (desiredScreenX - camW/2) / zoom
+    const pad = this.size / 2 + this.margin;
+    const desiredX = cam.width - pad;
+    const desiredY = cam.height - pad;
     this.container.setScale(1 / z);
     this.container.setPosition(
-      cam.scrollX + visW - pad,
-      cam.scrollY + visH - pad
+      cam.width / 2 + (desiredX - cam.width / 2) / z,
+      cam.height / 2 + (desiredY - cam.height / 2) / z
     );
   }
 

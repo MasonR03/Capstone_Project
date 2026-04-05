@@ -71,6 +71,7 @@ class LevelPanel {
     this.panelY = openY;
 
     this.panel = this.scene.add.container(this.panelX, this.panelY)
+      .setScrollFactor(0)
       .setDepth(this.PANEL_Z);
 
     this.panelBg = this.scene.add.rectangle(0, 0, this.PANEL_W, this.PANEL_H, 0x0b0b0b, 0.92)
@@ -104,7 +105,7 @@ class LevelPanel {
       this.tabBtn = this.scene.add.rectangle(0, 0, 28, 24, 0x00ffcc, 0.85).setOrigin(0.5, 0.5);
     }
 
-    this.tabBtn.setDepth(this.TAB_Z);
+    this.tabBtn.setScrollFactor(0).setDepth(this.TAB_Z);
     this.tabBtn.setInteractive({ useHandCursor: true });
     this.tabBtn.on('pointerdown', () => this.toggle());
 
@@ -116,7 +117,7 @@ class LevelPanel {
       strokeThickness: 3
     }).setOrigin(0.5, 0.5);
 
-    this.tabCountText.setDepth(this.TAB_Z + 1);
+    this.tabCountText.setScrollFactor(0).setDepth(this.TAB_Z + 1);
     this._updateTabCount();
   }
 
@@ -149,7 +150,7 @@ class LevelPanel {
       fontFamily: style.fontFamily || 'monospace'
     }).setOrigin(0, 0);
 
-    obj.setDepth(this.PANEL_Z + 2);
+    obj.setScrollFactor(0).setDepth(this.PANEL_Z + 2);
     obj._panelLocalX = x;
     obj._panelLocalY = y;
 
@@ -178,7 +179,7 @@ class LevelPanel {
       .setOrigin(0, 0)
       .setStrokeStyle(1, 0xffffff, enabled ? 0.22 : 0.12);
 
-    bg.setDepth(this.PANEL_Z + 2);
+    bg.setScrollFactor(0).setDepth(this.PANEL_Z + 2);
     bg._panelLocalX = x;
     bg._panelLocalY = y;
 
@@ -189,7 +190,7 @@ class LevelPanel {
       align: 'center'
     }).setOrigin(0.5, 0.5);
 
-    txt.setDepth(this.PANEL_Z + 3);
+    txt.setScrollFactor(0).setDepth(this.PANEL_Z + 3);
     txt._panelLocalX = x + (w / 2);
     txt._panelLocalY = y + (h / 2);
 
@@ -633,30 +634,36 @@ class LevelPanel {
     if (!camera) return;
 
     const z = camera.zoom || 1;
-    const visH = camera.height / z;
-    const worldPanelY = camera.scrollY + visH - (this.PANEL_MARGIN + this.PANEL_H) / z;
-    const worldPanelX = camera.scrollX + this.panelX / z;
-    this.panelY = worldPanelY;
+    const hw = camera.width / 2;
+    const hh = camera.height / 2;
+
+    // Desired screen-pixel Y for panel top
+    const desiredY = camera.height - this.PANEL_MARGIN - this.PANEL_H;
+    // Convert desired screen positions to scrollFactor(0) obj positions
+    const objPanelX = hw + (this.panelX - hw) / z;
+    const objPanelY = hh + (desiredY - hh) / z;
 
     if (this.panel) {
       this.panel.setScale(1 / z);
-      this.panel.setPosition(worldPanelX, worldPanelY);
+      this.panel.setPosition(objPanelX, objPanelY);
     }
 
     this.contentObjects.forEach((obj) => {
       if (!obj) return;
       if (typeof obj._panelLocalX !== 'number' || typeof obj._panelLocalY !== 'number') return;
 
+      const sx = this.panelX + obj._panelLocalX;
+      const sy = desiredY + obj._panelLocalY;
       obj.setScale(1 / z);
-      obj.x = worldPanelX + obj._panelLocalX / z;
-      obj.y = worldPanelY + obj._panelLocalY / z;
+      obj.x = hw + (sx - hw) / z;
+      obj.y = hh + (sy - hh) / z;
     });
 
     if (this.tabBtn) {
-      const tabX = worldPanelX + (this.PANEL_W + this.TAB_OUTSIDE_PAD) / z;
-      const tabY = worldPanelY + this.TAB_OFFSET_Y / z;
+      const sx = this.panelX + this.PANEL_W + this.TAB_OUTSIDE_PAD;
+      const sy = desiredY + this.TAB_OFFSET_Y;
       this.tabBtn.setScale(1 / z);
-      this.tabBtn.setPosition(tabX, tabY);
+      this.tabBtn.setPosition(hw + (sx - hw) / z, hh + (sy - hh) / z);
     }
 
     if (this.tabCountText && this.tabBtn) {

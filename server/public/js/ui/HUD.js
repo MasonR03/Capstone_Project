@@ -61,8 +61,9 @@ class HUD {
    * @private
    */
   _create() {
-    // HUD container (positioned in world space, updated each tick)
+    // HUD container (screen-space, repositioned each tick for zoom)
     this.container = this.scene.add.container(this.HUD_X, this.HUD_Y)
+      .setScrollFactor(0)
       .setDepth(200);
 
     // Calculate fill widths
@@ -170,11 +171,12 @@ class HUD {
     if (!camera) return;
     if (this.container) {
       const z = camera.zoom || 1;
-      const pad = this.HUD_X / z;
+      // Phaser scrollFactor(0) transform: screenPos = (objPos - camW/2) * zoom + camW/2
+      // Solve for objPos to land at desired screen pixel (HUD_X, HUD_Y)
       this.container.setScale(1 / z);
       this.container.setPosition(
-        camera.scrollX + pad,
-        camera.scrollY + pad
+        camera.width / 2 + (this.HUD_X - camera.width / 2) / z,
+        camera.height / 2 + (this.HUD_Y - camera.height / 2) / z
       );
     }
   }
