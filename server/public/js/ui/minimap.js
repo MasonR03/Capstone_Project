@@ -75,10 +75,9 @@ class Minimap {
   _create() {
     const cam = this.scene.cameras.main;
 
-    this.container = this.scene.add.container(
-      cam.width - (this.size / 2) - this.margin,
-      cam.height - (this.size / 2) - this.margin
-    ).setScrollFactor(0).setDepth(2000);
+    this.container = this.scene.add.container(0, 0)
+      .setScrollFactor(0)
+      .setDepth(2000);
 
     // Circular mask drawn in local container space
     this.maskGraphics = this.scene.add.graphics().setScrollFactor(0);
@@ -119,9 +118,18 @@ class Minimap {
    */
   anchor() {
     const cam = this.scene.cameras.main;
+    const z = cam.zoom || 1;
+    // Phaser camera transform for scrollFactor(0):
+    //   screenX = (objX - camW/2) * zoom + camW/2
+    // Solving for objX given desired screenX:
+    //   objX = camW/2 + (desiredScreenX - camW/2) / zoom
+    const pad = this.size / 2 + this.margin;
+    const desiredX = cam.width - pad;
+    const desiredY = cam.height - pad;
+    this.container.setScale(1 / z);
     this.container.setPosition(
-      cam.width - (this.size / 2) - this.margin,
-      cam.height - (this.size / 2) - this.margin
+      cam.width / 2 + (desiredX - cam.width / 2) / z,
+      cam.height / 2 + (desiredY - cam.height / 2) / z
     );
   }
 

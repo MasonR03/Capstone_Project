@@ -79,7 +79,9 @@ const GameConfig = {
   camera: {
     followLerpX: 0.12,
     followLerpY: 0.12,
-    initialZoom: 1.0
+    initialZoom: 1.0,
+    baseWidth: 1280,
+    baseHeight: 720
   },
 
   // Minimap settings
@@ -93,23 +95,6 @@ const GameConfig = {
       myDot: 0x00e5ff,
       otherDot: 0xffffff
     }
-  },
-
-  // HUD layout constants
-  hud: {
-    x: 16,
-    y: 16,
-    hp: {
-      startX: 50,
-      centerY: 14,
-      endX: 128
-    },
-    xp: {
-      startX: 50,
-      centerY: 48,
-      endX: 128
-    },
-    fillPadX: 2
   },
 
   // Ping measurement interval
@@ -143,7 +128,7 @@ const GameConfig = {
       tanker: 'assets/vector_shipT.svg'
     },
     bullet: 'assets/bullet_defult.png',
-    hudBars: 'assets/Bar.png',
+
     menuIn: 'assets/MenuSliderIn.png',
     menuOut: 'assets/MenuSliderOut.png',
     backdrop: 'assets/backdrop_tile.webp'

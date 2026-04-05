@@ -35,7 +35,9 @@ document.addEventListener('DOMContentLoaded', async function () {
     window.playerName = username;
     window.loginComplete = true;
     loginOverlay.classList.add('hidden');
-    logoutButton.style.display = 'block';
+    document.getElementById('top-toolbar').classList.add('visible');
+    const hudBars = document.getElementById('hud-bars');
+    if (hudBars) hudBars.classList.add('visible');
     console.log('👤 Player logged in as:', username);
   }
 

@@ -64,7 +64,7 @@ class LevelPanel {
    */
   _create() {
     const cam = this.scene.cameras.main;
-    const openY = cam.height - this.PANEL_MARGIN - this.PANEL_H;
+    const openY = (cam.height / (cam.zoom || 1)) - this.PANEL_MARGIN - this.PANEL_H;
     const closedX = -this.PANEL_W + 24;
 
     this.panelX = closedX;
@@ -568,7 +568,7 @@ class LevelPanel {
 
     const cam = this.scene.cameras.main;
     const openX = this.PANEL_MARGIN;
-    const openY = cam.height - this.PANEL_MARGIN - this.PANEL_H;
+    const openY = (cam.height / (cam.zoom || 1)) - this.PANEL_MARGIN - this.PANEL_H;
 
     this.panelTween = this.scene.tweens.addCounter({
       from: this.panelX,
@@ -602,7 +602,7 @@ class LevelPanel {
 
     const cam = this.scene.cameras.main;
     const closedX = -this.PANEL_W + 24;
-    const openY = cam.height - this.PANEL_MARGIN - this.PANEL_H;
+    const openY = (cam.height / (cam.zoom || 1)) - this.PANEL_MARGIN - this.PANEL_H;
 
     this.panelTween = this.scene.tweens.addCounter({
       from: this.panelX,
@@ -633,28 +633,41 @@ class LevelPanel {
   tick(camera) {
     if (!camera) return;
 
-    const baseY = camera.height - this.PANEL_MARGIN - this.PANEL_H;
-    this.panelY = baseY;
+    const z = camera.zoom || 1;
+    const hw = camera.width / 2;
+    const hh = camera.height / 2;
+
+    // Desired screen-pixel Y for panel top
+    const desiredY = camera.height - this.PANEL_MARGIN - this.PANEL_H;
+    // Convert desired screen positions to scrollFactor(0) obj positions
+    const objPanelX = hw + (this.panelX - hw) / z;
+    const objPanelY = hh + (desiredY - hh) / z;
 
     if (this.panel) {
-      this.panel.setPosition(this.panelX, this.panelY);
+      this.panel.setScale(1 / z);
+      this.panel.setPosition(objPanelX, objPanelY);
     }
 
     this.contentObjects.forEach((obj) => {
       if (!obj) return;
       if (typeof obj._panelLocalX !== 'number' || typeof obj._panelLocalY !== 'number') return;
 
-      obj.x = this.panelX + obj._panelLocalX;
-      obj.y = this.panelY + obj._panelLocalY;
+      const sx = this.panelX + obj._panelLocalX;
+      const sy = desiredY + obj._panelLocalY;
+      obj.setScale(1 / z);
+      obj.x = hw + (sx - hw) / z;
+      obj.y = hh + (sy - hh) / z;
     });
 
     if (this.tabBtn) {
-      const tabX = this.panelX + this.PANEL_W + this.TAB_OUTSIDE_PAD;
-      const tabY = this.panelY + this.TAB_OFFSET_Y;
-      this.tabBtn.setPosition(tabX, tabY);
+      const sx = this.panelX + this.PANEL_W + this.TAB_OUTSIDE_PAD;
+      const sy = desiredY + this.TAB_OFFSET_Y;
+      this.tabBtn.setScale(1 / z);
+      this.tabBtn.setPosition(hw + (sx - hw) / z, hh + (sy - hh) / z);
     }
 
     if (this.tabCountText && this.tabBtn) {
+      this.tabCountText.setScale(1 / z);
       this.tabCountText.setPosition(this.tabBtn.x, this.tabBtn.y);
     }
   }

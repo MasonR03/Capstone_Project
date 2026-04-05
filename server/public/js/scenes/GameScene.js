@@ -91,9 +91,6 @@ class GameScene extends Phaser.Scene {
     // Bullet
     this.load.image('bullet', GameConfig.assets.bullet);
 
-    // HUD
-    this.load.image('hudBars', GameConfig.assets.hudBars);
-
     // Level menu
     this.load.image('menuIn', GameConfig.assets.menuIn);
     this.load.image('menuOut', GameConfig.assets.menuOut);
@@ -142,7 +139,7 @@ class GameScene extends Phaser.Scene {
 
     // Camera
     this.cameras.main.centerOn(WORLD_W / 2, WORLD_H / 2);
-    this.cameras.main.setZoom(GameConfig.camera.initialZoom);
+    this.handleResize(this.sys.game.config.width, this.sys.game.config.height);
 
     // Managers
     this.entityManager = new ClientEntityManager(this);
@@ -505,6 +502,14 @@ class GameScene extends Phaser.Scene {
 
       this._ensureCameraFollow();
     });
+  }
+
+  handleResize(width, height) {
+    const cam = this.cameras.main;
+    const zoomX = width / GameConfig.camera.baseWidth;
+    const zoomY = height / GameConfig.camera.baseHeight;
+    cam.setSize(width, height);
+    cam.setZoom(Math.max(zoomX, zoomY));
   }
 
   /**
