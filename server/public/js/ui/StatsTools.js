@@ -44,7 +44,7 @@ class StatsTools {
       status: document.getElementById('stats-status')
     };
 
-    this.statsButton.style.display = 'block';
+    // Button visibility is managed by the toolbar container
 
     const savedState = localStorage.getItem('statsPanelVisible');
     if (savedState === 'true') {

@@ -242,7 +242,7 @@ async function bootstrapDatabase(projectRoot) {
       return;
     }
 
-    const pushCode = await runCommand(prismaCmd, ['db', 'push'], { cwd: projectRoot, env: process.env });
+    const pushCode = await runCommand(prismaCmd, ['db', 'push', '--accept-data-loss'], { cwd: projectRoot, env: process.env });
     if (pushCode !== 0) {
       console.warn('[bootstrap] Prisma db push failed; starting server anyway.');
     }

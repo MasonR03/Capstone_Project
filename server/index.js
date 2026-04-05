@@ -63,6 +63,15 @@ io.engine.use(sessionMiddleware);
 app.use('/api', authRoutes);
 
 // ------------------------------
+// Client config endpoint
+// ------------------------------
+app.get('/api/config', (req, res) => {
+  res.json({
+    debug: process.env.DEBUG === 'true'
+  });
+});
+
+// ------------------------------
 // Serve your public client files
 // ------------------------------
 // (update the path if public is outside server/)

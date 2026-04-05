@@ -91,9 +91,6 @@ class GameScene extends Phaser.Scene {
     // Bullet
     this.load.image('bullet', GameConfig.assets.bullet);
 
-    // HUD
-    this.load.image('hudBars', GameConfig.assets.hudBars);
-
     // Level menu
     this.load.image('menuIn', GameConfig.assets.menuIn);
     this.load.image('menuOut', GameConfig.assets.menuOut);

@@ -97,23 +97,6 @@ const GameConfig = {
     }
   },
 
-  // HUD layout constants
-  hud: {
-    x: 16,
-    y: 16,
-    hp: {
-      startX: 50,
-      centerY: 14,
-      endX: 128
-    },
-    xp: {
-      startX: 50,
-      centerY: 48,
-      endX: 128
-    },
-    fillPadX: 2
-  },
-
   // Ping measurement interval
   network: {
     pingInterval: 1000
@@ -145,7 +128,7 @@ const GameConfig = {
       tanker: 'assets/vector_shipT.svg'
     },
     bullet: 'assets/bullet_defult.png',
-    hudBars: 'assets/Bar.png',
+
     menuIn: 'assets/MenuSliderIn.png',
     menuOut: 'assets/MenuSliderOut.png',
     backdrop: 'assets/backdrop_tile.webp'
