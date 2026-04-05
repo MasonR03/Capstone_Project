@@ -75,30 +75,28 @@ class Minimap {
   _create() {
     const cam = this.scene.cameras.main;
 
-    this.container = this.scene.add.container(
-      cam.width - (this.size / 2) - this.margin,
-      cam.height - (this.size / 2) - this.margin
-    ).setScrollFactor(0).setDepth(2000);
+    this.container = this.scene.add.container(0, 0)
+      .setDepth(2000);
 
     // Circular mask drawn in local container space
-    this.maskGraphics = this.scene.add.graphics().setScrollFactor(0);
+    this.maskGraphics = this.scene.add.graphics();
     this.maskGraphics.fillStyle(0xffffff, 1);
     this.maskGraphics.fillCircle(0, 0, this.radius);
     this.maskGraphics.setVisible(false);
 
     // Main draw layer in local container space
-    this.graphics = this.scene.add.graphics().setScrollFactor(0);
+    this.graphics = this.scene.add.graphics();
 
     const geoMask = this.maskGraphics.createGeometryMask();
     this.graphics.setMask(geoMask);
 
     // Ring border
-    this.ringGraphics = this.scene.add.graphics().setScrollFactor(0);
+    this.ringGraphics = this.scene.add.graphics();
     this.ringGraphics.lineStyle(3, this.colors.border, 1);
     this.ringGraphics.strokeCircle(0, 0, this.radius);
 
     // Background
-    this.bgGraphics = this.scene.add.graphics().setScrollFactor(0);
+    this.bgGraphics = this.scene.add.graphics();
     this.bgGraphics.fillStyle(0x000000, 0.45);
     this.bgGraphics.fillCircle(0, 0, this.radius);
 
@@ -119,9 +117,16 @@ class Minimap {
    */
   anchor() {
     const cam = this.scene.cameras.main;
+    const z = cam.zoom || 1;
+    // Visible area in world coordinates
+    const visW = cam.width / z;
+    const visH = cam.height / z;
+    // Position in world space at bottom-right of visible area
+    const pad = (this.size / 2 + this.margin) / z;
+    this.container.setScale(1 / z);
     this.container.setPosition(
-      cam.width - (this.size / 2) - this.margin,
-      cam.height - (this.size / 2) - this.margin
+      cam.scrollX + visW - pad,
+      cam.scrollY + visH - pad
     );
   }
 

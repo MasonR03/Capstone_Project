@@ -9,22 +9,17 @@
 
       body {
         margin: 0;
-        background: #1a1a1a;
+        background: #000;
         color: white;
         font-family: sans-serif;
         overflow: hidden;
-        display: flex;
-        justify-content: center;
-        align-items: center;
         height: 100vh;
         position: relative;
       }
       #game-container {
-        width: 800px;
-        height: 600px;
+        width: 100vw;
+        height: 100vh;
         image-rendering: pixelated;
-        border: 4px solid #00ffff;
-        box-shadow: 0 0 20px rgba(0, 255, 255, 0.5);
       }
       #debug-button {
         position: absolute;
@@ -130,14 +125,16 @@
 
 
     .game-stage {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 16px;
+      position: relative;
+      width: 100vw;
+      height: 100vh;
     }
 
     #title-overlay {
-      display: inline-block;
+      position: absolute;
+      top: 12px;
+      left: 50%;
+      transform: translateX(-50%);
       font-family: 'Orbitron', sans-serif;
       font-weight: 900;
       font-size: 64px;

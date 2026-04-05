@@ -41,15 +41,6 @@ class InputManager {
     // Shoot key (spacebar)
     this._shootKey = scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
 
-    // Fullscreen toggle
-    this._fullscreenKey = scene.input.keyboard.on('keydown-F', () => {
-      if (scene.scale.isFullscreen) {
-        scene.scale.stopFullscreen();
-      } else {
-        scene.scale.startFullscreen();
-      }
-    });
-
     console.log('InputManager initialized');
   }
 

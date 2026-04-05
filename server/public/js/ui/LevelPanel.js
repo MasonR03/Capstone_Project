@@ -64,14 +64,13 @@ class LevelPanel {
    */
   _create() {
     const cam = this.scene.cameras.main;
-    const openY = cam.height - this.PANEL_MARGIN - this.PANEL_H;
+    const openY = (cam.height / (cam.zoom || 1)) - this.PANEL_MARGIN - this.PANEL_H;
     const closedX = -this.PANEL_W + 24;
 
     this.panelX = closedX;
     this.panelY = openY;
 
     this.panel = this.scene.add.container(this.panelX, this.panelY)
-      .setScrollFactor(0)
       .setDepth(this.PANEL_Z);
 
     this.panelBg = this.scene.add.rectangle(0, 0, this.PANEL_W, this.PANEL_H, 0x0b0b0b, 0.92)
@@ -105,7 +104,7 @@ class LevelPanel {
       this.tabBtn = this.scene.add.rectangle(0, 0, 28, 24, 0x00ffcc, 0.85).setOrigin(0.5, 0.5);
     }
 
-    this.tabBtn.setScrollFactor(0).setDepth(this.TAB_Z);
+    this.tabBtn.setDepth(this.TAB_Z);
     this.tabBtn.setInteractive({ useHandCursor: true });
     this.tabBtn.on('pointerdown', () => this.toggle());
 
@@ -117,7 +116,7 @@ class LevelPanel {
       strokeThickness: 3
     }).setOrigin(0.5, 0.5);
 
-    this.tabCountText.setScrollFactor(0).setDepth(this.TAB_Z + 1);
+    this.tabCountText.setDepth(this.TAB_Z + 1);
     this._updateTabCount();
   }
 
@@ -150,7 +149,7 @@ class LevelPanel {
       fontFamily: style.fontFamily || 'monospace'
     }).setOrigin(0, 0);
 
-    obj.setScrollFactor(0).setDepth(this.PANEL_Z + 2);
+    obj.setDepth(this.PANEL_Z + 2);
     obj._panelLocalX = x;
     obj._panelLocalY = y;
 
@@ -179,7 +178,7 @@ class LevelPanel {
       .setOrigin(0, 0)
       .setStrokeStyle(1, 0xffffff, enabled ? 0.22 : 0.12);
 
-    bg.setScrollFactor(0).setDepth(this.PANEL_Z + 2);
+    bg.setDepth(this.PANEL_Z + 2);
     bg._panelLocalX = x;
     bg._panelLocalY = y;
 
@@ -190,7 +189,7 @@ class LevelPanel {
       align: 'center'
     }).setOrigin(0.5, 0.5);
 
-    txt.setScrollFactor(0).setDepth(this.PANEL_Z + 3);
+    txt.setDepth(this.PANEL_Z + 3);
     txt._panelLocalX = x + (w / 2);
     txt._panelLocalY = y + (h / 2);
 
@@ -568,7 +567,7 @@ class LevelPanel {
 
     const cam = this.scene.cameras.main;
     const openX = this.PANEL_MARGIN;
-    const openY = cam.height - this.PANEL_MARGIN - this.PANEL_H;
+    const openY = (cam.height / (cam.zoom || 1)) - this.PANEL_MARGIN - this.PANEL_H;
 
     this.panelTween = this.scene.tweens.addCounter({
       from: this.panelX,
@@ -602,7 +601,7 @@ class LevelPanel {
 
     const cam = this.scene.cameras.main;
     const closedX = -this.PANEL_W + 24;
-    const openY = cam.height - this.PANEL_MARGIN - this.PANEL_H;
+    const openY = (cam.height / (cam.zoom || 1)) - this.PANEL_MARGIN - this.PANEL_H;
 
     this.panelTween = this.scene.tweens.addCounter({
       from: this.panelX,
@@ -633,28 +632,35 @@ class LevelPanel {
   tick(camera) {
     if (!camera) return;
 
-    const baseY = camera.height - this.PANEL_MARGIN - this.PANEL_H;
-    this.panelY = baseY;
+    const z = camera.zoom || 1;
+    const visH = camera.height / z;
+    const worldPanelY = camera.scrollY + visH - (this.PANEL_MARGIN + this.PANEL_H) / z;
+    const worldPanelX = camera.scrollX + this.panelX / z;
+    this.panelY = worldPanelY;
 
     if (this.panel) {
-      this.panel.setPosition(this.panelX, this.panelY);
+      this.panel.setScale(1 / z);
+      this.panel.setPosition(worldPanelX, worldPanelY);
     }
 
     this.contentObjects.forEach((obj) => {
       if (!obj) return;
       if (typeof obj._panelLocalX !== 'number' || typeof obj._panelLocalY !== 'number') return;
 
-      obj.x = this.panelX + obj._panelLocalX;
-      obj.y = this.panelY + obj._panelLocalY;
+      obj.setScale(1 / z);
+      obj.x = worldPanelX + obj._panelLocalX / z;
+      obj.y = worldPanelY + obj._panelLocalY / z;
     });
 
     if (this.tabBtn) {
-      const tabX = this.panelX + this.PANEL_W + this.TAB_OUTSIDE_PAD;
-      const tabY = this.panelY + this.TAB_OFFSET_Y;
+      const tabX = worldPanelX + (this.PANEL_W + this.TAB_OUTSIDE_PAD) / z;
+      const tabY = worldPanelY + this.TAB_OFFSET_Y / z;
+      this.tabBtn.setScale(1 / z);
       this.tabBtn.setPosition(tabX, tabY);
     }
 
     if (this.tabCountText && this.tabBtn) {
+      this.tabCountText.setScale(1 / z);
       this.tabCountText.setPosition(this.tabBtn.x, this.tabBtn.y);
     }
   }

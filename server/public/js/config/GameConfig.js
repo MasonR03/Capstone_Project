@@ -79,7 +79,9 @@ const GameConfig = {
   camera: {
     followLerpX: 0.12,
     followLerpY: 0.12,
-    initialZoom: 1.0
+    initialZoom: 1.0,
+    baseWidth: 1280,
+    baseHeight: 720
   },
 
   // Minimap settings

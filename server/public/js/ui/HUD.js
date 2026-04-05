@@ -61,9 +61,8 @@ class HUD {
    * @private
    */
   _create() {
-    // HUD container (screen-space)
+    // HUD container (positioned in world space, updated each tick)
     this.container = this.scene.add.container(this.HUD_X, this.HUD_Y)
-      .setScrollFactor(0)
       .setDepth(200);
 
     // Calculate fill widths
@@ -170,7 +169,13 @@ class HUD {
   tick(camera) {
     if (!camera) return;
     if (this.container) {
-      this.container.setPosition(this.HUD_X, this.HUD_Y);
+      const z = camera.zoom || 1;
+      const pad = this.HUD_X / z;
+      this.container.setScale(1 / z);
+      this.container.setPosition(
+        camera.scrollX + pad,
+        camera.scrollY + pad
+      );
     }
   }
 

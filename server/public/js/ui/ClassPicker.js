@@ -109,9 +109,12 @@ class ClassPicker {
     } catch (e) {}
 
     const cam = this.scene.cameras.main;
+    const z = cam.zoom || 1;
+    const vw = cam.width / z;
+    const vh = cam.height / z;
 
-    this.overlay = this.scene.add.container(0, 0)
-      .setScrollFactor(0)
+    this.overlay = this.scene.add.container(cam.scrollX, cam.scrollY)
+      .setScale(1 / z)
       .setDepth(999999);
 
     const dim = this.scene.add.rectangle(0, 0, cam.width, cam.height, 0x000000, 0.80)
