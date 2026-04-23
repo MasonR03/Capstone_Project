@@ -39,6 +39,9 @@ class LevelPanel {
     this.isAnimating = false;
     this.progress = cloneProgress(options.progress || PLAYER_PROGRESS_DEFAULTS);
     this.onChange = typeof options.onChange === 'function' ? options.onChange : null;
+    this.onRequestShipPicker =
+      typeof options.onRequestShipPicker === 'function' ? options.onRequestShipPicker : null;
+    this.activeTab = 'upgrades'; // upgrades | ships
 
     // Panel position
     this.panelX = 0;
@@ -92,7 +95,7 @@ class LevelPanel {
   }
 
   /**
-   * Create the tab button.
+   * Create the slide tab button.
    *
    * @private
    */
@@ -218,6 +221,53 @@ class LevelPanel {
   }
 
   /**
+   * Add top tabs inside panel.
+   *
+   * @private
+   */
+  _addTabs() {
+    const y = 42;
+    const w = 136;
+    const h = 22;
+    const gap = 8;
+
+    const upgradesActive = this.activeTab === 'upgrades';
+    const shipsActive = this.activeTab === 'ships';
+
+    this._addButton(
+      14,
+      y,
+      w,
+      h,
+      'UPGRADES',
+      () => {
+        this.activeTab = 'upgrades';
+        this._rebuildContents();
+      },
+      {
+        enabled: !upgradesActive,
+        fill: upgradesActive ? 0x245040 : 0x18303a
+      }
+    );
+
+    this._addButton(
+      14 + w + gap,
+      y,
+      w,
+      h,
+      'SHIPS',
+      () => {
+        this.activeTab = 'ships';
+        this._rebuildContents();
+      },
+      {
+        enabled: !shipsActive,
+        fill: shipsActive ? 0x4f3020 : 0x18303a
+      }
+    );
+  }
+
+  /**
    * Get the active ship key.
    *
    * @returns {string}
@@ -257,11 +307,13 @@ class LevelPanel {
   _rebuildContents() {
     this._clearContent();
 
-    let y = 42;
+    let y = 74;
 
     const activeShipKey = this._getActiveShipKey();
     const activeShipProgress = this._getActiveShipProgress();
     const activeShipStats = getShipStats(activeShipKey, this.progress);
+
+    this._addTabs();
 
     this._addText(14, y, `Ship: ${CLASS_STATS[activeShipKey].name}`, {
       fontSize: '13px',
@@ -283,76 +335,112 @@ class LevelPanel {
     });
     y += 18;
 
-    this._addText(14, y, `Unspent Stat Points: ${activeShipProgress.unspentStatPoints}`, {
-      fill: '#9fe8ff'
-    });
-    y += 18;
+    if (this.activeTab === 'upgrades') {
+      this._addText(14, y, `Unspent Stat Points: ${activeShipProgress.unspentStatPoints}`, {
+        fill: '#9fe8ff'
+      });
+      y += 18;
 
-    this._addText(14, y, 'Stat points come from leveling up.', {
-      fill: '#7fa6b2'
-    });
-    y += 26;
+      this._addText(14, y, 'Stat points come from leveling up.', {
+        fill: '#7fa6b2'
+      });
+      y += 26;
 
-    this._addText(14, y, `${CLASS_STATS[activeShipKey].name} Upgrades`, {
-      fontSize: '13px',
-      fill: '#ffffff'
-    });
-    y += 18;
+      this._addText(14, y, `${CLASS_STATS[activeShipKey].name} Upgrades`, {
+        fontSize: '13px',
+        fill: '#ffffff'
+      });
+      y += 18;
 
-    const canUpgrade = activeShipProgress.unspentStatPoints > 0;
+      const canUpgrade = activeShipProgress.unspentStatPoints > 0;
 
-    this._addText(14, y, `HP: ${activeShipStats.maxHp}  (+${activeShipProgress.upgrades.maxHp})`);
-    this._addButton(
-      190,
-      y - 2,
-      100,
-      20,
-      canUpgrade ? 'UPGRADE HP' : 'NO STAT PTS',
-      () => this.upgradeShipStat('maxHp'),
-      { enabled: canUpgrade, fill: 0x20465d }
-    );
-    y += 26;
+      this._addText(14, y, `HP: ${activeShipStats.maxHp}  (+${activeShipProgress.upgrades.maxHp})`);
+      this._addButton(
+        190,
+        y - 2,
+        100,
+        20,
+        canUpgrade ? 'UPGRADE HP' : 'NO STAT PTS',
+        () => this.upgradeShipStat('maxHp'),
+        { enabled: canUpgrade, fill: 0x20465d }
+      );
+      y += 26;
 
-    this._addText(14, y, `Speed: ${activeShipStats.speed}  (+${activeShipProgress.upgrades.speed})`);
-    this._addButton(
-      190,
-      y - 2,
-      100,
-      20,
-      canUpgrade ? 'UPGRADE SPD' : 'NO STAT PTS',
-      () => this.upgradeShipStat('speed'),
-      { enabled: canUpgrade, fill: 0x20465d }
-    );
-    y += 26;
+      this._addText(14, y, `Speed: ${activeShipStats.speed}  (+${activeShipProgress.upgrades.speed})`);
+      this._addButton(
+        190,
+        y - 2,
+        100,
+        20,
+        canUpgrade ? 'UPGRADE SPD' : 'NO STAT PTS',
+        () => this.upgradeShipStat('speed'),
+        { enabled: canUpgrade, fill: 0x20465d }
+      );
+      y += 26;
 
-    this._addText(14, y, `Accel: ${activeShipStats.accel}  (+${activeShipProgress.upgrades.accel})`);
-    this._addButton(
-      190,
-      y - 2,
-      100,
-      20,
-      canUpgrade ? 'UPGRADE ACC' : 'NO STAT PTS',
-      () => this.upgradeShipStat('accel'),
-      { enabled: canUpgrade, fill: 0x20465d }
-    );
-    y += 34;
+      this._addText(14, y, `Accel: ${activeShipStats.accel}  (+${activeShipProgress.upgrades.accel})`);
+      this._addButton(
+        190,
+        y - 2,
+        100,
+        20,
+        canUpgrade ? 'UPGRADE ACC' : 'NO STAT PTS',
+        () => this.upgradeShipStat('accel'),
+        { enabled: canUpgrade, fill: 0x20465d }
+      );
+    }
 
-    this._addText(14, y, 'Ship Unlocks', {
-      fontSize: '13px',
-      fill: '#ffffff'
-    });
-    y += 18;
+    if (this.activeTab === 'ships') {
+      y += 8;
 
-    this._addShipRow('starter', y);
-    y += 30;
+      this._addText(14, y, 'Ship Menu', {
+        fontSize: '13px',
+        fill: '#ffffff'
+      });
+      y += 18;
 
-    this._addShipRow('hunter', y);
-    y += 30;
+      this._addButton(
+        14,
+        y,
+        276,
+        22,
+        'OPEN SHIP MENU',
+        () => this.requestShipMenu(),
+        {
+          enabled: true,
+          fill: 0x20465d
+        }
+      );
+      y += 32;
 
-    this._addShipRow('tanker', y);
+      this._addText(14, y, 'Ship Unlocks', {
+        fontSize: '13px',
+        fill: '#ffffff'
+      });
+      y += 18;
+
+      this._addShipRow('starter', y);
+      y += 30;
+
+      this._addShipRow('hunter', y);
+      y += 30;
+
+      this._addShipRow('tanker', y);
+    }
 
     this._updateTabCount();
     this.tick(this.scene.cameras.main);
+  }
+
+  /**
+   * Open ship picker from panel.
+   *
+   * @private
+   */
+  requestShipMenu() {
+    if (this.onRequestShipPicker) {
+      this.onRequestShipPicker();
+    }
   }
 
   /**
@@ -381,10 +469,18 @@ class LevelPanel {
     }
 
     if (unlocked) {
-      this._addButton(190, y - 2, 100, 20, 'USE SHIP', () => this.selectShip(shipKey), {
-        enabled: true,
-        fill: 0x20465d
-      });
+      this._addButton(
+        190,
+        y - 2,
+        100,
+        20,
+        'SELECT SHIP',
+        () => this.requestShipMenu(),
+        {
+          enabled: true,
+          fill: 0x20465d
+        }
+      );
       return;
     }
 
@@ -512,7 +608,7 @@ class LevelPanel {
   }
 
   /**
-   * Select the current ship.
+   * Select the current ship directly.
    *
    * @param {string} shipKey
    */
@@ -637,9 +733,7 @@ class LevelPanel {
     const hw = camera.width / 2;
     const hh = camera.height / 2;
 
-    // Desired screen-pixel Y for panel top
     const desiredY = camera.height - this.PANEL_MARGIN - this.PANEL_H;
-    // Convert desired screen positions to scrollFactor(0) obj positions
     const objPanelX = hw + (this.panelX - hw) / z;
     const objPanelY = hh + (desiredY - hh) / z;
 

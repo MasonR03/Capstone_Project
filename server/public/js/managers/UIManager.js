@@ -79,6 +79,7 @@ class UIManager {
     if (typeof LevelPanel === 'function') {
       this.levelPanel = new LevelPanel(scene, {
         progress: this.progress,
+
         onChange: (progress) => {
           this.progress = cloneProgress(progress);
           gameState.setPlayerProgress(this.progress);
@@ -92,6 +93,37 @@ class UIManager {
           }
 
           this._syncHudWithState();
+        },
+
+        onRequestShipPicker: () => {
+          this.openClassPicker((classKey) => {
+            const unlockedShips = this.progress?.unlockedShips || [];
+
+            if (!unlockedShips.includes(classKey)) {
+              return;
+            }
+
+            this.progress.selectedShip = classKey;
+            gameState.setClassChoice(classKey);
+            gameState.setPlayerProgress(this.progress);
+
+            if (this.levelPanel) {
+              this.levelPanel.setProgress(this.progress);
+            }
+
+            this._syncHudWithState();
+
+            // If your scene already has a respawn/swap method, use it automatically:
+            if (this.scene && typeof this.scene.respawnLocalPlayerAsSelectedShip === 'function') {
+              this.scene.respawnLocalPlayerAsSelectedShip(classKey);
+            } else if (this.scene && typeof this.scene.respawnLocalPlayer === 'function') {
+              this.scene.respawnLocalPlayer();
+            } else if (this.scene && typeof this.scene.recreateLocalPlayerShip === 'function') {
+              this.scene.recreateLocalPlayerShip(classKey);
+            }
+          }, {
+            progress: this.progress
+          });
         }
       });
     } else {
