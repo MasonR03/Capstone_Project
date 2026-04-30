@@ -108,7 +108,22 @@ const GameConfig = {
     bulletLifetime: 2000,
     fireRate: 250,
     bulletDamage: 15,
-    bulletSize: 8
+    bulletSize: 8,
+    laser: {
+      coreLength: 22,
+      coreWidth: 5,
+      haloLength: 32,
+      haloWidth: 14,
+      trailLifespan: 250,
+      muzzleScale: 0.6,
+      impactDuration: 150,
+      colorByClass: {
+        starter: { core: 0xffffff, glow: 0x00e5ff },
+        hunter:  { core: 0xffffff, glow: 0xff3366 },
+        tanker:  { core: 0xffffff, glow: 0xffaa33 }
+      },
+      defaultColor: { core: 0xffffff, glow: 0x00e5ff }
+    }
   },
 
   // Sprite dimensions
