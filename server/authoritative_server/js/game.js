@@ -377,6 +377,50 @@ function initializeServer(io) {
 }
 
 
+/**
+ * Mark a ship as killed and schedule its respawn.
+ *
+ * @param {import('socket.io').Server} io
+ * @param {string} victimId
+ * @param {string|null} killerId
+ */
+function handleShipKilled(io, victimId, killerId) {
+  const deadShip = entityManager.getShip(victimId);
+  if (!deadShip) return;
+
+  console.log('💀 Ship destroyed:', victimId, 'by', killerId || '(environment)');
+  io.emit('playerKilled', { victimId, killerId });
+
+  setTimeout(() => {
+    const ship = entityManager.getShip(victimId);
+    if (!ship) return;
+
+    ship.hp = ship.maxHp;
+    const newX = Math.floor(Math.random() * (WORLD_WIDTH - 100)) + 50;
+    const newY = Math.floor(Math.random() * (WORLD_HEIGHT - 100)) + 50;
+    ship.x = newX;
+    ship.y = newY;
+    if (ship.body) {
+      ship.body.x = newX;
+      ship.body.y = newY;
+      ship.body.setVelocity(0, 0);
+    }
+    ship.lastCollisionDamageAt = 0;
+    ship._atBarrier = false;
+    ship.barrierHitThisFrame = false;
+
+    io.emit('playerRespawned', {
+      playerId: victimId,
+      x: newX,
+      y: newY,
+      hp: ship.hp,
+      maxHp: ship.maxHp
+    });
+
+    console.log('🔄 Ship respawned:', victimId);
+  }, RESPAWN_DELAY);
+}
+
 function updateGame(io, frameCount, delta) {
   if (frameCount % 60 === 0) {
     removeStalePlayers(io);
@@ -416,44 +460,16 @@ function updateGame(io, frameCount, delta) {
     });
 
     if (hit.killed) {
-      const deadShip = entityManager.getShip(hit.shipId);
+      handleShipKilled(io, hit.shipId, hit.ownerId);
+    }
+  });
 
-      console.log('💀 Ship destroyed:', hit.shipId, 'by', hit.ownerId);
-      io.emit('playerKilled', {
-        victimId: hit.shipId,
-        killerId: hit.ownerId
-      });
-
-      // Respawn after delay
-      if (deadShip) {
-        setTimeout(() => {
-          // Check if ship still exists (player might have disconnected)
-          const ship = entityManager.getShip(hit.shipId);
-          if (!ship) return;
-
-          // Reset HP and reposition
-          ship.hp = ship.maxHp;
-          const newX = Math.floor(Math.random() * (WORLD_WIDTH - 100)) + 50;
-          const newY = Math.floor(Math.random() * (WORLD_HEIGHT - 100)) + 50;
-          ship.x = newX;
-          ship.y = newY;
-          if (ship.body) {
-            ship.body.x = newX;
-            ship.body.y = newY;
-            ship.body.setVelocity(0, 0);
-          }
-
-          io.emit('playerRespawned', {
-            playerId: hit.shipId,
-            x: newX,
-            y: newY,
-            hp: ship.hp,
-            maxHp: ship.maxHp
-          });
-
-          console.log('🔄 Ship respawned:', hit.shipId);
-        }, RESPAWN_DELAY);
-      }
+  // Handle ship-vs-ship and ship-vs-barrier collisions
+  const collisionEvents = entityManager.processCollisions(Date.now());
+  collisionEvents.forEach((evt) => {
+    if (evt.killed) {
+      const killerId = evt.source === 'ship' ? evt.otherId : null;
+      handleShipKilled(io, evt.shipId, killerId);
     }
   });
 

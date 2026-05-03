@@ -41,6 +41,12 @@ class Ship {
     this.worldWidth = config.worldWidth || 2000;
     this.worldHeight = config.worldHeight || 2000;
     this.borderBuffer = config.borderBuffer || 20;
+
+    // Collision state
+    this.collisionRadius = config.collisionRadius || 26;
+    this.lastCollisionDamageAt = 0;
+    this._atBarrier = false;
+    this.barrierHitThisFrame = false;
   }
 
   /**
@@ -140,26 +146,38 @@ class Ship {
   }
 
   /**
-   * Enforce world boundary constraints
+   * Enforce world boundary constraints.
+   *
+   * Sets {@link Ship#barrierHitThisFrame} to true on the rising edge of a
+   * barrier contact so a ship pressed against the wall is only damaged once.
    */
   enforceBounds() {
     if (!this.body) return;
 
+    let touching = false;
+
     if (this.body.x < this.borderBuffer) {
       this.body.x = this.borderBuffer;
       this.body.setVelocityX(0);
+      touching = true;
     } else if (this.body.x > this.worldWidth - this.borderBuffer) {
       this.body.x = this.worldWidth - this.borderBuffer;
       this.body.setVelocityX(0);
+      touching = true;
     }
 
     if (this.body.y < this.borderBuffer) {
       this.body.y = this.borderBuffer;
       this.body.setVelocityY(0);
+      touching = true;
     } else if (this.body.y > this.worldHeight - this.borderBuffer) {
       this.body.y = this.worldHeight - this.borderBuffer;
       this.body.setVelocityY(0);
+      touching = true;
     }
+
+    this.barrierHitThisFrame = touching && !this._atBarrier;
+    this._atBarrier = touching;
   }
 
   /**
