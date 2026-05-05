@@ -410,6 +410,30 @@
       user-select: none;
       z-index: 600;
       white-space: nowrap;
+      opacity: 0;
+    }
+
+    #title-overlay.active {
+      animation: kill-streak-banner 3200ms ease-in-out forwards;
+    }
+
+    @keyframes kill-streak-banner {
+      0% {
+        opacity: 0;
+        transform: translate(-50%, -10px) scale(0.94);
+      }
+      14% {
+        opacity: 1;
+        transform: translate(-50%, 0) scale(1);
+      }
+      72% {
+        opacity: 1;
+        transform: translate(-50%, 0) scale(1);
+      }
+      100% {
+        opacity: 0;
+        transform: translate(-50%, -10px) scale(0.98);
+      }
     }
 
     /* scale down on smaller viewports */
@@ -832,7 +856,7 @@
     </div>
 
     <div class="game-stage">
-      <div id="title-overlay">ORBITFALL</div>
+      <div id="title-overlay" aria-live="polite"></div>
       <div id="game-container"></div>
       <div id="hud-bars" class="hud-bars-wrapper">
         <div class="hud-bars-inner">
