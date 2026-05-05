@@ -203,6 +203,17 @@ class UIManager {
   }
 
   /**
+   * Update boost recharge meter.
+   *
+   * @param {Object} data
+   */
+  updateBoost(data) {
+    if (this.toolbar && this.toolbar.updateBoost) {
+      this.toolbar.updateBoost(data);
+    }
+  }
+
+  /**
    * Set player progress.
    *
    * @param {Object} progress
@@ -427,6 +438,7 @@ if (typeof window !== 'undefined') {
       return window.UI;
     },
     updateHpXp: (stats) => uiManager.updateHpXp(stats),
+    updateBoost: (data) => uiManager.updateBoost(data),
     tick: (camera) => uiManager.tick(camera),
     updateMinimap: (data) => uiManager.updateMinimap(data)
   };

@@ -35,6 +35,8 @@ class GameScene extends Phaser.Scene {
     this._damageCueTimer = null;
     this._damageTintTimer = null;
     this._shipHitTintTimers = new Map();
+    this._boostCooldownMs = GameConfig.boost.cooldownMs;
+    this._boostCooldownUntil = 0;
 
     // Progress
     this.playerProgress = cloneProgress(PLAYER_PROGRESS_DEFAULTS);
@@ -233,7 +235,11 @@ class GameScene extends Phaser.Scene {
 
     this._ensureCameraFollow();
 
+    const now = Date.now();
     const input = inputManager.getCurrentInput();
+    if (input.boost && now >= this._boostCooldownUntil) {
+      this._boostCooldownUntil = now + this._boostCooldownMs;
+    }
 
     if (this.entityManager) {
       this.entityManager.applyLocalPrediction(input, dt);
@@ -246,10 +252,10 @@ class GameScene extends Phaser.Scene {
       networkManager.emitPlayerInput(input);
 
       if (inputManager.isShootPressed()) {
-        const now = Date.now();
+        const shotNow = Date.now();
 
-        if (now - this._lastShootTime >= GameConfig.weapons.fireRate) {
-          this._lastShootTime = now;
+        if (shotNow - this._lastShootTime >= GameConfig.weapons.fireRate) {
+          this._lastShootTime = shotNow;
           networkManager.emitShoot();
         }
       }
@@ -258,7 +264,6 @@ class GameScene extends Phaser.Scene {
     // Sync progress changes to the server
     const latestProgress = gameState.getPlayerProgress();
     const progressJson = JSON.stringify(latestProgress);
-    const now = Date.now();
 
     if (
       progressJson !== this._lastProgressSync &&
@@ -286,6 +291,7 @@ class GameScene extends Phaser.Scene {
       stars: starData
     });
 
+    this._updateBoostMeter();
     uiManager.tick(this.cameras.main);
   }
 
@@ -448,6 +454,36 @@ class GameScene extends Phaser.Scene {
     if (hasMaxHp) {
       this._lastLocalMaxHp = nextMaxHp;
     }
+  }
+
+  /**
+   * Track authoritative boost recharge for the local HUD.
+   *
+   * @param {Object} serverState
+   * @private
+   */
+  _trackLocalBoost(serverState) {
+    if (Number.isFinite(serverState.boostCooldownMs)) {
+      this._boostCooldownMs = serverState.boostCooldownMs;
+    }
+
+    if (Number.isFinite(serverState.boostCooldownRemainingMs)) {
+      this._boostCooldownUntil = Date.now() + Math.max(0, serverState.boostCooldownRemainingMs);
+    }
+  }
+
+  /**
+   * Update the boost recharge meter.
+   *
+   * @private
+   */
+  _updateBoostMeter() {
+    const remainingMs = Math.max(0, this._boostCooldownUntil - Date.now());
+
+    uiManager.updateBoost({
+      remainingMs,
+      cooldownMs: this._boostCooldownMs
+    });
   }
 
   /**
@@ -640,6 +676,7 @@ class GameScene extends Phaser.Scene {
       if (localState) {
         this._lastLocalHp = localState.hp;
         this._lastLocalMaxHp = localState.maxHp;
+        this._trackLocalBoost(localState);
       }
 
       this._ensureCameraFollow();
@@ -683,6 +720,7 @@ class GameScene extends Phaser.Scene {
           ship.predicted.vy = 0;
           this._lastLocalHp = data.hp;
           this._lastLocalMaxHp = data.maxHp;
+          this._boostCooldownUntil = 0;
         }
       }
     });
@@ -698,6 +736,7 @@ class GameScene extends Phaser.Scene {
       this.entityManager.processServerUpdate(serverPlayers, {
         onLocalPlayerUpdate: (serverState) => {
           this._trackLocalDamage(serverState);
+          this._trackLocalBoost(serverState);
 
           gameState.updateLocalPlayerStats({
             hp: serverState.hp,

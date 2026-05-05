@@ -75,6 +75,13 @@ const WEAPON_CONFIG = {
   bulletDamage: 15
 };
 
+const BOOST_CONFIG = {
+  cooldownMs: 3000,
+  impulse: 360,
+  durationMs: 450,
+  maxSpeedMultiplier: 1.65
+};
+
 // Respawn delay in ms
 const RESPAWN_DELAY = 3000;
 
@@ -198,7 +205,11 @@ function initializeServer(io) {
       maxSpeed: classConfig.speed,
       acceleration: classConfig.accel,
       maxHp: classConfig.maxHp,
-      hp: classConfig.maxHp
+      hp: classConfig.maxHp,
+      boostCooldownMs: BOOST_CONFIG.cooldownMs,
+      boostImpulse: BOOST_CONFIG.impulse,
+      boostDurationMs: BOOST_CONFIG.durationMs,
+      boostMaxSpeedMultiplier: BOOST_CONFIG.maxSpeedMultiplier
     });
 
     socket.data.playerProgress = initialProgress;
@@ -287,7 +298,7 @@ function initializeServer(io) {
       ship.hp = clampHpToMax(ship.hp, ship.maxHp);
 
       if (ship.body) {
-        ship.body.setMaxVelocity(ship.stats.maxSpeed);
+        ship.syncBoostVelocityCap();
       }
 
       console.log(
@@ -415,6 +426,9 @@ function handleShipKilled(io, victimId, killerId) {
     ship.lastCollisionDamageAt = 0;
     ship._atBarrier = false;
     ship.barrierHitThisFrame = false;
+    ship.lastBoostAt = 0;
+    ship.boostActiveUntil = 0;
+    ship.boostQueued = false;
 
     io.emit('playerRespawned', {
       playerId: victimId,

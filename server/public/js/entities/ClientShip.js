@@ -60,6 +60,15 @@ class ClientShip {
       gripFactor: GameConfig.shipPhysics.gripFactor
     };
 
+    this.boost = {
+      cooldownMs: serverState.boostCooldownMs || GameConfig.boost.cooldownMs,
+      impulse: GameConfig.boost.impulse,
+      durationMs: serverState.boostDurationMs || GameConfig.boost.durationMs,
+      maxSpeedMultiplier: GameConfig.boost.maxSpeedMultiplier
+    };
+    this._lastPredictedBoostAt = 0;
+    this._boostActiveUntil = 0;
+
     // World bounds from config
     this.worldWidth = GameConfig.world.width;
     this.worldHeight = GameConfig.world.height;
@@ -183,6 +192,28 @@ class ClientShip {
 
     if (Number.isFinite(serverState.acceleration)) {
       this.stats.acceleration = serverState.acceleration;
+    }
+
+    if (Number.isFinite(serverState.boostCooldownMs)) {
+      this.boost.cooldownMs = serverState.boostCooldownMs;
+    }
+
+    if (Number.isFinite(serverState.boostDurationMs)) {
+      this.boost.durationMs = serverState.boostDurationMs;
+    }
+
+    if (
+      Number.isFinite(serverState.boostCooldownRemainingMs) &&
+      serverState.boostCooldownRemainingMs > 0
+    ) {
+      this._lastPredictedBoostAt = Date.now() - (this.boost.cooldownMs - serverState.boostCooldownRemainingMs);
+    }
+
+    if (
+      Number.isFinite(serverState.boostActiveRemainingMs) &&
+      serverState.boostActiveRemainingMs > 0
+    ) {
+      this._boostActiveUntil = Date.now() + serverState.boostActiveRemainingMs;
     }
 
     // Update player name if changed
@@ -314,11 +345,14 @@ class ClientShip {
       this.predicted.vy -= lateralY * gripPerFrame;
     }
 
+    this._applyBoostPrediction(input);
+
     // Clamp velocity to max
     const speed = Math.sqrt(this.predicted.vx ** 2 + this.predicted.vy ** 2);
-    if (speed > this.stats.maxSpeed) {
-      this.predicted.vx = (this.predicted.vx / speed) * this.stats.maxSpeed;
-      this.predicted.vy = (this.predicted.vy / speed) * this.stats.maxSpeed;
+    const maxSpeed = this._getCurrentMaxSpeed();
+    if (speed > maxSpeed) {
+      this.predicted.vx = (this.predicted.vx / speed) * maxSpeed;
+      this.predicted.vy = (this.predicted.vy / speed) * maxSpeed;
     }
 
     // Update position
@@ -343,6 +377,25 @@ class ClientShip {
 
     // Apply to sprite
     this._updateSprite(this.predicted.x, this.predicted.y, this.predicted.rotation);
+  }
+
+  _getCurrentMaxSpeed() {
+    return Date.now() < this._boostActiveUntil
+      ? this.stats.maxSpeed * this.boost.maxSpeedMultiplier
+      : this.stats.maxSpeed;
+  }
+
+  _applyBoostPrediction(input) {
+    if (!input.boost) return;
+
+    const now = Date.now();
+    if (now - this._lastPredictedBoostAt < this.boost.cooldownMs) return;
+
+    const angle = this.predicted.rotation + 1.5;
+    this.predicted.vx += Math.cos(angle) * this.boost.impulse;
+    this.predicted.vy += Math.sin(angle) * this.boost.impulse;
+    this._lastPredictedBoostAt = now;
+    this._boostActiveUntil = now + this.boost.durationMs;
   }
 
   /**

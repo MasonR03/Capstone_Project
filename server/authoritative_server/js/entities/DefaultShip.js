@@ -38,14 +38,20 @@ class DefaultShip extends Ship {
    * @param {boolean} input.right - Right key pressed
    * @param {boolean} input.up - Up key pressed
    * @param {boolean} input.down - Down key pressed
+   * @param {boolean} input.boost - Boost key pressed
    * @param {number} input.seq - Input sequence number (optional)
    */
   handleInput(input) {
+    if (input.boost) {
+      this.queueBoost();
+    }
+
     this.input = {
       left: input.left || false,
       right: input.right || false,
       up: input.up || false,
-      down: input.down || false
+      down: input.down || false,
+      boost: input.boost || false
     };
 
     // Track input sequence for client-side prediction reconciliation

@@ -172,7 +172,8 @@ class NetworkManager {
       left: !!input.left,
       right: !!input.right,
       up: !!input.up,
-      down: !!input.down
+      down: !!input.down,
+      boost: !!input.boost
     });
   }
 

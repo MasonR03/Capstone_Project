@@ -68,6 +68,14 @@ const GameConfig = {
     gripFactor: 0.2
   },
 
+  // Boost settings
+  boost: {
+    cooldownMs: 3000,
+    impulse: 360,
+    durationMs: 450,
+    maxSpeedMultiplier: 1.65
+  },
+
   // Movement sync
   movement: {
     snapThreshold: 10000,

@@ -157,7 +157,7 @@
         top: 44px;
         left: 16px;
         width: 140px;
-        height: 64px;
+        height: 90px;
         z-index: 900;
         display: none;
       }
@@ -169,7 +169,7 @@
         top: 0;
         left: 0;
         width: 140px;
-        height: 64px;
+        height: 90px;
       }
       .hud-frame {
         position: absolute;
@@ -216,6 +216,46 @@
       }
       .hp-text { top: 10px; }
       .xp-text { top: 44px; }
+      .boost-meter {
+        position: absolute;
+        top: 70px;
+        left: 10px;
+        width: 120px;
+        height: 14px;
+        box-sizing: border-box;
+        border: 1px solid rgba(0, 255, 255, 0.65);
+        background: rgba(0, 8, 14, 0.78);
+        box-shadow: inset 0 0 8px rgba(0, 0, 0, 0.9), 0 0 8px rgba(0, 255, 255, 0.2);
+        overflow: hidden;
+        z-index: 3;
+      }
+      .boost-meter-fill {
+        position: absolute;
+        top: 0;
+        left: 0;
+        height: 100%;
+        width: 100%;
+        background: linear-gradient(90deg, #00ccff, #66ffcc);
+        box-shadow: 0 0 8px rgba(0, 255, 255, 0.5);
+        transition: width 0.08s linear;
+      }
+      .boost-meter.ready {
+        border-color: #66ffcc;
+      }
+      .boost-meter-text {
+        position: absolute;
+        inset: 0;
+        z-index: 2;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family: 'Orbitron', sans-serif;
+        font-size: 9px;
+        font-weight: 600;
+        color: #ffffff;
+        text-shadow: 0 1px 2px rgba(0,0,0,0.95);
+        pointer-events: none;
+      }
 
       #debug-panel {
         position: absolute;
@@ -650,6 +690,10 @@
           <div class="hud-fill xp-fill" id="toolbar-xp-fill"></div>
           <span class="hud-bar-text xp-text" id="toolbar-xp-text">0/0</span>
           <img src="assets/Bar.png" class="hud-frame" alt="" draggable="false" />
+          <div class="boost-meter ready" id="toolbar-boost-meter">
+            <div class="boost-meter-fill" id="toolbar-boost-fill"></div>
+            <span class="boost-meter-text" id="toolbar-boost-text">BOOST</span>
+          </div>
         </div>
       </div>
     </div>
