@@ -7,6 +7,7 @@ const EntityManager = require('./managers/EntityManager');
 const BulletManager = require('./managers/BulletManager');
 const ShootingStarManager = require('./managers/ShootingStarManager');
 const CollectibleStarManager = require('./managers/CollectibleStarManager');
+const AsteroidManager = require('./managers/AsteroidManager');
 const {
   normalizeUsername,
   getOrCreateProfile,
@@ -18,6 +19,7 @@ const {
 let entityManager = null;
 let bulletManager = null;
 let collectibleStarManager = null;
+let asteroidManager = null;
 
 // Global constants (can be accessed via EntityManager .worldConfig)
 const WORLD_WIDTH = 2000;
@@ -102,6 +104,17 @@ const COLLECTIBLE_STAR_CONFIG = {
   pointValue: 1
 };
 
+const ASTEROID_CONFIG = {
+  maxActive: 4,
+  spawnIntervalMs: 3600,
+  minSpeed: 75,
+  maxSpeed: 145,
+  hp: 50,
+  radius: 32,
+  contactDamage: 35,
+  xpValue: 200
+};
+
 // Respawn delay in ms
 const RESPAWN_DELAY = 3000;
 
@@ -154,6 +167,11 @@ function initializeServer(io) {
     COLLECTIBLE_STAR_CONFIG
   );
   collectibleStarManager.fillToCap();
+
+  asteroidManager = new AsteroidManager(
+    { width: WORLD_WIDTH, height: WORLD_HEIGHT },
+    ASTEROID_CONFIG
+  );
 
   console.log('✅ Physics world initialized');
 
@@ -255,6 +273,7 @@ function initializeServer(io) {
     // Send current state to new player
     socket.emit('currentPlayers', entityManager.serializeAll());
     socket.emit('collectibleStarsSnapshot', collectibleStarManager.serializeAll());
+    socket.emit('asteroidSnapshot', asteroidManager.serializeAll());
 
     // Notify others
     socket.broadcast.emit('newPlayer', ship.serialize());
@@ -268,6 +287,10 @@ function initializeServer(io) {
 
     socket.on('requestCollectibleStars', () => {
       socket.emit('collectibleStarsSnapshot', collectibleStarManager.serializeAll());
+    });
+
+    socket.on('requestAsteroids', () => {
+      socket.emit('asteroidSnapshot', asteroidManager.serializeAll());
     });
 
     // Auto-load profile on connection (replaces old setPlayerName-triggered load)
@@ -468,6 +491,35 @@ function initializeServer(io) {
     lastTime = currentTime;
 
     shootingStarManager.update(delta);
+
+    const asteroidResult = asteroidManager.update(delta, entityManager.ships, bulletManager);
+    asteroidResult.spawned.forEach((asteroid) => {
+      io.emit('asteroidSpawned', asteroid);
+    });
+    asteroidResult.shipHits.forEach((hit) => {
+      io.emit('asteroidShipHit', hit);
+      if (hit.killed) {
+          handleShipKilled(io, hit.shipId, null, 'asteroid');
+      }
+    });
+    if (asteroidResult.bulletHits.length > 0) {
+      io.emit('asteroidHits', asteroidResult.bulletHits);
+      io.emit('bulletsRemoved', asteroidResult.bulletHits.map((hit) => hit.bulletId));
+    }
+    asteroidResult.destroyed.forEach((event) => {
+      const ship = entityManager.getShip(event.ownerId);
+      if (ship) {
+        ship.gainXP(event.xpValue);
+      }
+      io.emit('asteroidDestroyed', event);
+    });
+
+    const destroyedIds = new Set(asteroidResult.destroyed.map((event) => event.asteroidId));
+    const removedAsteroidIds = asteroidResult.removed.filter((id) => !destroyedIds.has(id));
+    if (removedAsteroidIds.length > 0) {
+      io.emit('asteroidsRemoved', removedAsteroidIds);
+    }
+
     const spawnedCollectibleStars = collectibleStarManager.update(delta);
     spawnedCollectibleStars.forEach((star) => {
       io.emit('collectibleStarSpawned', star);
@@ -488,12 +540,12 @@ function initializeServer(io) {
  * @param {string} victimId
  * @param {string|null} killerId
  */
-function handleShipKilled(io, victimId, killerId) {
+function handleShipKilled(io, victimId, killerId, cause = null) {
   const deadShip = entityManager.getShip(victimId);
   if (!deadShip) return;
 
   console.log('💀 Ship destroyed:', victimId, 'by', killerId || '(environment)');
-  io.emit('playerKilled', { victimId, killerId });
+  io.emit('playerKilled', { victimId, killerId, cause });
 
   setTimeout(() => {
     const ship = entityManager.getShip(victimId);
@@ -514,6 +566,8 @@ function handleShipKilled(io, victimId, killerId) {
     ship.barrierHitThisFrame = false;
     ship.lastBoostAt = 0;
     ship.boostActiveUntil = 0;
+    ship.boostMomentumUntil = 0;
+    ship.boostMomentumSpeedCap = 0;
     ship.boostQueued = false;
 
     io.emit('playerRespawned', {
@@ -525,6 +579,7 @@ function handleShipKilled(io, victimId, killerId) {
     });
 
     io.to(victimId).emit('collectibleStarsSnapshot', collectibleStarManager.serializeAll());
+    io.to(victimId).emit('asteroidSnapshot', asteroidManager.serializeAll());
 
     console.log('🔄 Ship respawned:', victimId);
   }, RESPAWN_DELAY);
@@ -597,6 +652,10 @@ function updateGame(io, frameCount, delta) {
   // Broadcast bullet positions every 3 frames (~20 Hz) to save bandwidth
   if (frameCount % 3 === 0 && bulletManager.getCount() > 0) {
     io.emit('bulletUpdates', bulletManager.serializeAll());
+  }
+
+  if (frameCount % 3 === 0) {
+    io.emit('asteroidUpdates', asteroidManager.serializeAll());
   }
 
   // Sends a UI snapshot ~ every 10sec

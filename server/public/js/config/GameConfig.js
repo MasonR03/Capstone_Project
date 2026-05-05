@@ -142,6 +142,12 @@ const GameConfig = {
     }
   },
 
+  asteroids: {
+    hp: 50,
+    radius: 32,
+    xpValue: 200
+  },
+
   // Audio settings
   audio: {
     defaultSfxVolume: 1
@@ -198,6 +204,9 @@ const GameConfig = {
     hitSound: 'assets/hit.mp3',
     lowHpSound: 'assets/lowhp.m4a',
     boostSound: 'assets/boost.mp3',
+    asteroid: 'assets/asteroid.png',
+    explodedAsteroid: 'assets/exploded_asteroid.png',
+    asteroidBoom: 'assets/asteroidboom.mp3',
     weaponHitSound: 'assets/weaponhit.m4a',
     levelUpSound: 'assets/levelup.mp3',
     starCollectSound: 'assets/starcollect.mp3',
