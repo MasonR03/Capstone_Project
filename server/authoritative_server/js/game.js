@@ -60,6 +60,13 @@ function getResolvedShipStats(classKey, progress = {}) {
   };
 }
 
+function clampHpToMax(hp, maxHp) {
+  const safeMaxHp = Number.isFinite(maxHp) ? Math.max(0, maxHp) : 0;
+  const safeHp = Number.isFinite(hp) ? hp : safeMaxHp;
+
+  return Math.max(0, Math.min(safeHp, safeMaxHp));
+}
+
 // Weapon config (server-side)
 const WEAPON_CONFIG = {
   bulletSpeed: 500,
@@ -276,8 +283,8 @@ function initializeServer(io) {
       ship.stats.acceleration = cfg.accel;
       ship.maxHp = cfg.maxHp;
 
-      // Keep HP valid and let HP upgrade fill the bar
-      ship.hp = ship.maxHp;
+      // Progress/class sync must not heal damage; only keep HP legal if maxHp changes.
+      ship.hp = clampHpToMax(ship.hp, ship.maxHp);
 
       if (ship.body) {
         ship.body.setMaxVelocity(ship.stats.maxSpeed);
