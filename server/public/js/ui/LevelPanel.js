@@ -110,7 +110,10 @@ class LevelPanel {
 
     this.tabBtn.setScrollFactor(0).setDepth(this.TAB_Z);
     this.tabBtn.setInteractive({ useHandCursor: true });
-    this.tabBtn.on('pointerdown', () => this.toggle());
+    this.tabBtn.on('pointerdown', () => {
+      this._playButtonPressSound();
+      this.toggle();
+    });
 
     this.tabCountText = this.scene.add.text(0, 0, '0', {
       fontSize: '12px',
@@ -204,6 +207,7 @@ class LevelPanel {
       );
 
       bg.on('pointerdown', () => {
+        this._playButtonPressSound();
         onClick();
       });
 
@@ -646,6 +650,17 @@ class LevelPanel {
   _emitChange() {
     if (this.onChange) {
       this.onChange(this.getProgress());
+    }
+  }
+
+  /**
+   * Play shared button feedback for Phaser UI controls.
+   *
+   * @private
+   */
+  _playButtonPressSound() {
+    if (typeof window !== 'undefined' && typeof window.playButtonPressSound === 'function') {
+      window.playButtonPressSound();
     }
   }
 

@@ -105,6 +105,7 @@ class GameScene extends Phaser.Scene {
     this.load.audio('boost_fire', GameConfig.assets.boostSound);
     this.load.audio('weapon_hit', GameConfig.assets.weaponHitSound);
     this.load.audio('level_up', GameConfig.assets.levelUpSound);
+    this.load.audio('star_collect', GameConfig.assets.starCollectSound);
 
     // Level menu
     this.load.image('menuIn', GameConfig.assets.menuIn);
@@ -817,6 +818,23 @@ class GameScene extends Phaser.Scene {
   }
 
   /**
+   * Play local star collection feedback.
+   *
+   * @private
+   */
+  _playStarCollectSound() {
+    if (!this.sound || !this.cache.audio.exists('star_collect')) return;
+
+    try {
+      this.sound.play('star_collect', {
+        volume: GameConfig.getSfxVolumeFor(0.65)
+      });
+    } catch (error) {
+      // Audio playback can be blocked until the browser unlocks the sound context.
+    }
+  }
+
+  /**
    * Briefly tint the local ship red without changing its death/respawn alpha.
    *
    * @private
@@ -1113,6 +1131,10 @@ class GameScene extends Phaser.Scene {
     socket.on('collectibleStarCollected', (data) => {
       const star = this.collectibleStarsById.get(data?.starId);
       const grantRewards = this.entityManager?.isLocalPlayer?.(data?.collectorId);
+
+      if (grantRewards) {
+        this._playStarCollectSound();
+      }
 
       if (star) {
         this.collectStar(star, {

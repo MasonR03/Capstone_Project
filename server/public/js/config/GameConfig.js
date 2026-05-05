@@ -188,6 +188,7 @@ const GameConfig = {
     boostSound: 'assets/boost.mp3',
     weaponHitSound: 'assets/weaponhit.m4a',
     levelUpSound: 'assets/levelup.mp3',
+    starCollectSound: 'assets/starcollect.mp3',
     collectibleStar: 'assets/Star.png',
 
     menuIn: 'assets/MenuSliderIn.png',

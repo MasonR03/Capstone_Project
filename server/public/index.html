@@ -691,6 +691,7 @@
 
   <body>
     <audio id="main-theme" src="assets/main_theme.mp3" loop preload="auto"></audio>
+    <audio id="button-press-sfx" src="assets/buttonpress.mp3" preload="auto"></audio>
     <div id="damage-vignette" aria-hidden="true"></div>
 
     <!-- Login Overlay -->
@@ -980,6 +981,30 @@
         });
 
         updateSfxControls();
+      })();
+    </script>
+
+    <script>
+      (() => {
+        const buttonSound = document.getElementById('button-press-sfx');
+        if (!buttonSound) return;
+
+        window.playButtonPressSound = () => {
+          const sound = buttonSound.cloneNode();
+          const volume = typeof window.getSfxVolume === 'function'
+            ? Math.max(0, Math.min(1, Number(window.getSfxVolume()) || 0))
+            : 1;
+
+          sound.volume = volume * 0.75;
+          sound.play().catch(() => {});
+        };
+
+        document.addEventListener('click', (event) => {
+          const target = event.target instanceof Element ? event.target : null;
+          const button = target ? target.closest('button, [role="button"]') : null;
+          if (!button || button.disabled || button.getAttribute('aria-disabled') === 'true') return;
+          window.playButtonPressSound();
+        });
       })();
     </script>
 
