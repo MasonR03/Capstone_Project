@@ -80,6 +80,19 @@
         border-color: #ff4444;
         background: linear-gradient(180deg, #4a2020, #331515);
       }
+      .music-toggle-btn {
+        min-width: 104px;
+      }
+      .music-toggle-btn.music-off {
+        color: #ffcc66;
+        border-color: #886a33;
+        background: linear-gradient(180deg, #4a3d20, #332815);
+      }
+      .music-toggle-btn.music-off:hover {
+        color: #ffdd88;
+        border-color: #ffcc66;
+        background: linear-gradient(180deg, #5a4a26, #3d3018);
+      }
 
       /* HUD bars — floating upper-right over the game canvas */
       .hud-bars-wrapper {
@@ -281,6 +294,13 @@
       opacity: 0.8;
       margin: 0;
       text-align: center;
+    }
+
+    .login-music-toggle {
+      display: flex;
+      justify-content: center;
+      width: 100%;
+      margin-top: -12px;
     }
 
     .login-form {
@@ -492,11 +512,16 @@
   </head>
 
   <body>
+    <audio id="main-theme" src="assets/main_theme.mp3" loop preload="auto"></audio>
+
     <!-- Login Overlay -->
     <div id="login-overlay">
       <div class="login-container">
         <h1 class="login-title">ORBITFALL</h1>
         <p class="login-subtitle">Welcome, Pilot</p>
+        <div class="login-music-toggle">
+          <button type="button" class="toolbar-btn music-toggle-btn music-off" aria-pressed="false">MUSIC OFF</button>
+        </div>
 
         <!-- Tabs -->
         <div class="auth-tabs">
@@ -570,6 +595,7 @@
       </div>
       <div class="toolbar-section toolbar-center"></div>
       <div class="toolbar-section toolbar-right">
+        <button type="button" class="toolbar-btn music-toggle-btn music-off" aria-pressed="false">MUSIC OFF</button>
         <button id="debug-button" class="toolbar-btn">DEBUG</button>
       </div>
     </div>
@@ -608,6 +634,66 @@
 
     <!-- Login handler -->
     <script src="login.js"></script>
+
+    <script>
+      (() => {
+        const theme = document.getElementById('main-theme');
+        if (!theme) return;
+
+        const musicVolume = 0.02;
+        const buttons = Array.from(document.querySelectorAll('.music-toggle-btn'));
+        let musicEnabled = false;
+
+        theme.volume = musicVolume;
+
+        const updateButtons = () => {
+          const label = musicEnabled ? 'MUSIC ON' : 'MUSIC OFF';
+          buttons.forEach((button) => {
+            button.textContent = label;
+            button.classList.toggle('music-off', !musicEnabled);
+            button.setAttribute('aria-pressed', String(musicEnabled));
+            button.setAttribute('title', musicEnabled ? 'Turn music off' : 'Turn music on');
+          });
+        };
+
+        const playTheme = () => {
+          if (!musicEnabled) return;
+          theme.volume = musicVolume;
+          theme.play().catch(() => {});
+        };
+
+        const pauseTheme = () => {
+          theme.pause();
+        };
+
+        buttons.forEach((button) => {
+          button.addEventListener('click', () => {
+            musicEnabled = !musicEnabled;
+
+            if (musicEnabled) {
+              playTheme();
+            } else {
+              pauseTheme();
+            }
+
+            updateButtons();
+          });
+        });
+
+        updateButtons();
+        playTheme();
+
+        ['click', 'keydown', 'pointerdown', 'touchstart'].forEach((eventName) => {
+          window.addEventListener(eventName, playTheme, { once: true, passive: true });
+        });
+
+        document.addEventListener('visibilitychange', () => {
+          if (!document.hidden && theme.paused) {
+            playTheme();
+          }
+        });
+      })();
+    </script>
 
     <!-- ES6 modular architecture -->
     <script type="module" src="js/main.js"></script>

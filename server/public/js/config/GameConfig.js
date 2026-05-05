@@ -143,6 +143,7 @@ const GameConfig = {
       tanker: 'assets/vector_shipT.svg'
     },
     bullet: 'assets/bullet_defult.png',
+    laserSound: 'assets/laser.m4a',
 
     menuIn: 'assets/MenuSliderIn.png',
     menuOut: 'assets/MenuSliderOut.png',
