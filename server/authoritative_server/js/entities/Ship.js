@@ -20,8 +20,8 @@ class Ship {
       maxSpeed: config.maxSpeed || 400,
       acceleration: config.acceleration || 200,
       angularSpeed: config.angularSpeed || (420 * (Math.PI / 180)), // 7.33 rad/s
-      dragFactor: config.dragFactor || 0.98,
-      gripFactor: config.gripFactor || 0.2, // lateral velocity dampening per frame (0=spaceship, higher=car-like)
+      dragFactor: config.dragFactor || 0.988,
+      gripFactor: config.gripFactor || 0.1, // lateral velocity dampening per frame (0=spaceship, higher=car-like)
     };
 
     // Combat/progression stats

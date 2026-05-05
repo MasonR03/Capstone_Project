@@ -76,8 +76,8 @@ const GameConfig = {
     maxSpeed: 400,
     acceleration: 200,
     angularSpeed: 420 * (Math.PI / 180),
-    dragFactor: 0.98,
-    gripFactor: 0.2
+    dragFactor: 0.988,
+    gripFactor: 0.1
   },
 
   // Boost settings
