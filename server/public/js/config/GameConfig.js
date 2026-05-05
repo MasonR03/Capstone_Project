@@ -187,6 +187,7 @@ const GameConfig = {
     hitSound: 'assets/hit.mp3',
     boostSound: 'assets/boost.mp3',
     weaponHitSound: 'assets/weaponhit.m4a',
+    levelUpSound: 'assets/levelup.mp3',
     collectibleStar: 'assets/Star.png',
 
     menuIn: 'assets/MenuSliderIn.png',

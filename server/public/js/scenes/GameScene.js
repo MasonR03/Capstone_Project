@@ -104,6 +104,7 @@ class GameScene extends Phaser.Scene {
     this.load.audio('player_hit', GameConfig.assets.hitSound);
     this.load.audio('boost_fire', GameConfig.assets.boostSound);
     this.load.audio('weapon_hit', GameConfig.assets.weaponHitSound);
+    this.load.audio('level_up', GameConfig.assets.levelUpSound);
 
     // Level menu
     this.load.image('menuIn', GameConfig.assets.menuIn);
@@ -558,6 +559,7 @@ class GameScene extends Phaser.Scene {
 
     if (upgradePointsGained > 0) {
       this._spawnUpgradePointPopup(upgradePointsGained);
+      networkManager.emitPlayerLevelUp(upgradePointsGained);
     }
   }
 
@@ -798,6 +800,23 @@ class GameScene extends Phaser.Scene {
   }
 
   /**
+   * Play local level-up feedback.
+   *
+   * @private
+   */
+  _playLevelUpSound() {
+    if (!this.sound || !this.cache.audio.exists('level_up')) return;
+
+    try {
+      this.sound.play('level_up', {
+        volume: GameConfig.getSfxVolumeFor(0.75)
+      });
+    } catch (error) {
+      // Audio playback can be blocked until the browser unlocks the sound context.
+    }
+  }
+
+  /**
    * Briefly tint the local ship red without changing its death/respawn alpha.
    *
    * @private
@@ -996,6 +1015,54 @@ class GameScene extends Phaser.Scene {
   }
 
   /**
+   * Show a level-up entry in the viewport-pinned kill feed.
+   *
+   * @param {Object} data
+   * @private
+   */
+  _showLevelUpFeedEntry(data) {
+    const feed = typeof document !== 'undefined'
+      ? document.getElementById('kill-feed')
+      : null;
+
+    if (!feed || !data?.playerId) return;
+
+    const entry = document.createElement('div');
+    const playerName =
+      (typeof data.playerName === 'string' && data.playerName.trim())
+        ? data.playerName.trim()
+        : this._getKillFeedName(data.playerId);
+    const pointsGained = Math.max(1, Math.floor(Number(data.pointsGained) || 1));
+
+    const addPart = (className, text) => {
+      const span = document.createElement('span');
+      if (className) span.className = className;
+      span.textContent = text;
+      entry.appendChild(span);
+    };
+
+    entry.className = 'kill-feed-entry level-up';
+    addPart('level-player', playerName);
+    addPart('verb', ' leveled up ');
+    addPart(
+      'level-points',
+      pointsGained === 1
+        ? '(+1 upgrade point)'
+        : `(+${pointsGained} upgrade points)`
+    );
+
+    feed.prepend(entry);
+
+    while (feed.children.length > 5) {
+      feed.lastElementChild.remove();
+    }
+
+    window.setTimeout(() => {
+      entry.remove();
+    }, 5400);
+  }
+
+  /**
    * Set up socket handlers.
    *
    * @private
@@ -1064,6 +1131,24 @@ class GameScene extends Phaser.Scene {
     socket.on('bulletHit', (data) => {
       this._playShipHitCue(data);
       this._playWeaponHitSound(data);
+    });
+
+    socket.on('playerLeveledUp', (data) => {
+      this._showLevelUpFeedEntry(data);
+
+      if (this.entityManager?.isLocalPlayer?.(data?.playerId)) {
+        this._playLevelUpSound();
+
+        if (Number.isFinite(data?.hp) && Number.isFinite(data?.maxHp)) {
+          this._lastLocalHp = data.hp;
+          this._lastLocalMaxHp = data.maxHp;
+          gameState.updateLocalPlayerStats({
+            hp: data.hp,
+            maxHp: data.maxHp
+          });
+          uiManager.updateHpXp(gameState.getLocalPlayerStats());
+        }
+      }
     });
 
     socket.on('playerKilled', (data) => {

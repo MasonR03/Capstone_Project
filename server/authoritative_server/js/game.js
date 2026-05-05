@@ -381,6 +381,22 @@ function initializeServer(io) {
       }
     });
 
+    socket.on('playerLevelUp', (payload = {}) => {
+      const ship = entityManager.getShip(socket.id);
+      if (!ship || ship.hp <= 0) return;
+
+      const pointsGained = Math.max(1, Math.floor(Number(payload.pointsGained) || 1));
+      ship.hp = ship.maxHp;
+
+      io.emit('playerLeveledUp', {
+        playerId: socket.id,
+        playerName: ship.getDisplayName(),
+        pointsGained,
+        hp: ship.hp,
+        maxHp: ship.maxHp
+      });
+    });
+
     // Handle disconnect
     socket.on('disconnect', () => {
       const ship = entityManager.getShip(socket.id);
