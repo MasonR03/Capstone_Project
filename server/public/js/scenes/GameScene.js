@@ -548,7 +548,7 @@ class GameScene extends Phaser.Scene {
 
     try {
       this.sound.play('player_hit', {
-        volume: Phaser.Math.Clamp(0.45 + severity * 0.25, 0.45, 0.7)
+        volume: GameConfig.getSfxVolumeFor(Phaser.Math.Clamp(0.45 + severity * 0.25, 0.45, 0.7))
       });
     } catch (error) {
       // Audio playback can be blocked until the browser unlocks the sound context.
@@ -565,7 +565,7 @@ class GameScene extends Phaser.Scene {
 
     try {
       this.sound.play('boost_fire', {
-        volume: 0.55
+        volume: GameConfig.getSfxVolumeFor(0.55)
       });
     } catch (error) {
       // Audio playback can be blocked until the browser unlocks the sound context.
@@ -628,7 +628,7 @@ class GameScene extends Phaser.Scene {
 
     try {
       this.sound.play('weapon_hit', {
-        volume: 0.5
+        volume: GameConfig.getSfxVolumeFor(0.5)
       });
     } catch (error) {
       // Audio playback can be blocked until the browser unlocks the sound context.

@@ -171,7 +171,7 @@ class BulletRenderer {
 
     try {
       this._scene.sound.play(LASER_SOUND_KEY, {
-        volume: 0.5
+        volume: GameConfig.getSfxVolumeFor(0.5)
       });
     } catch (error) {
       // Audio playback can be blocked until the browser unlocks the sound context.

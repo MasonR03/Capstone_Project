@@ -7,6 +7,18 @@
 
 import { CLASS_STATS } from '../stats/stats.js';
 
+function clamp01(value) {
+  return Math.max(0, Math.min(1, Number(value) || 0));
+}
+
+function getSfxVolume() {
+  if (typeof window !== 'undefined' && typeof window.getSfxVolume === 'function') {
+    return clamp01(window.getSfxVolume());
+  }
+
+  return 1;
+}
+
 const GameConfig = {
   // World bounds
   world: {
@@ -108,6 +120,17 @@ const GameConfig = {
   // Ping measurement interval
   network: {
     pingInterval: 1000
+  },
+
+  // Audio settings
+  audio: {
+    defaultSfxVolume: 1
+  },
+
+  getSfxVolume,
+
+  getSfxVolumeFor(baseVolume = 1) {
+    return clamp01(baseVolume) * getSfxVolume();
   },
 
   // Weapon settings
