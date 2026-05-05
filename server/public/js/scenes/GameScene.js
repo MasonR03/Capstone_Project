@@ -698,6 +698,79 @@ class GameScene extends Phaser.Scene {
   }
 
   /**
+   * Resolve a player id into a readable kill feed name.
+   *
+   * @param {string} playerId
+   * @returns {string}
+   * @private
+   */
+  _getKillFeedName(playerId) {
+    if (!playerId) return 'Unknown Pilot';
+
+    const ship = this.entityManager?.getShip?.(playerId);
+    const displayName =
+      ship?.getDisplayName?.() ||
+      ship?.playerName ||
+      ship?.name ||
+      ship?.serverState?.playerName ||
+      ship?.serverState?.username ||
+      ship?.serverState?.name;
+
+    if (typeof displayName === 'string' && displayName.trim()) {
+      return displayName.trim();
+    }
+
+    const shortId = String(playerId).slice(0, 6);
+    return `Pilot ${shortId}`;
+  }
+
+  /**
+   * Show a viewport-pinned kill feed entry.
+   *
+   * @param {Object} data
+   * @private
+   */
+  _showKillFeedEntry(data) {
+    const feed = typeof document !== 'undefined'
+      ? document.getElementById('kill-feed')
+      : null;
+
+    if (!feed || !data?.victimId) return;
+
+    const entry = document.createElement('div');
+    const victimName = this._getKillFeedName(data.victimId);
+    const killerName = data.killerId ? this._getKillFeedName(data.killerId) : '';
+
+    const addPart = (className, text) => {
+      const span = document.createElement('span');
+      if (className) span.className = className;
+      span.textContent = text;
+      entry.appendChild(span);
+    };
+
+    if (data.killerId && data.killerId !== data.victimId) {
+      entry.className = 'kill-feed-entry';
+      addPart('killer', killerName);
+      addPart('verb', ' eliminated ');
+      addPart('victim', victimName);
+    } else {
+      entry.className = 'kill-feed-entry environment';
+      addPart('victim', victimName);
+      addPart('verb', ' hit a wall');
+    }
+
+    feed.prepend(entry);
+
+    while (feed.children.length > 5) {
+      feed.lastElementChild.remove();
+    }
+
+    window.setTimeout(() => {
+      entry.remove();
+    }, 5400);
+  }
+
+  /**
    * Set up socket handlers.
    *
    * @private
@@ -743,6 +816,8 @@ class GameScene extends Phaser.Scene {
     });
 
     socket.on('playerKilled', (data) => {
+      this._showKillFeedEntry(data);
+
       const ship = this.entityManager.getShip(data.victimId);
       if (ship && ship.sprite) {
         ship.sprite.setAlpha(0.3);
