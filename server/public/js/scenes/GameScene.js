@@ -543,6 +543,17 @@ class GameScene extends Phaser.Scene {
    * @private
    */
   _grantCollectedStarRewards(xpValue, pointValue) {
+    this._grantXpReward(xpValue, pointValue);
+  }
+
+  /**
+   * Add XP and optional points to the local player's active ship progress.
+   *
+   * @param {number} xpValue
+   * @param {number} pointValue
+   * @private
+   */
+  _grantXpReward(xpValue, pointValue = 0) {
     if (!uiManager.levelPanel) return;
 
     let upgradePointsGained = 0;
@@ -551,7 +562,7 @@ class GameScene extends Phaser.Scene {
       upgradePointsGained = uiManager.levelPanel.gainXp(xpValue) || 0;
     }
 
-    if (uiManager.levelPanel.addPoint) {
+    if (pointValue > 0 && uiManager.levelPanel.addPoint) {
       uiManager.levelPanel.addPoint(pointValue);
     }
 
@@ -1186,6 +1197,14 @@ class GameScene extends Phaser.Scene {
 
     socket.on('playerKilled', (data) => {
       this._showKillFeedEntry(data);
+
+      if (
+        data?.killerId &&
+        data.killerId !== data.victimId &&
+        this.entityManager?.isLocalPlayer?.(data.killerId)
+      ) {
+        this._grantXpReward(GameConfig.rewards?.playerEliminationXp || 100);
+      }
 
       const ship = this.entityManager.getShip(data.victimId);
       if (ship && ship.sprite) {

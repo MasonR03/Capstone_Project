@@ -112,9 +112,14 @@ const GameConfig = {
     worldRange: 600,
     colors: {
       border: 0x00ffff,
-      myDot: 0x00e5ff,
-      otherDot: 0xffffff
+      myDot: 0x44ff66,
+      otherDot: 0xff4444
     }
+  },
+
+  // Reward settings
+  rewards: {
+    playerEliminationXp: 100
   },
 
   // Ping measurement interval
