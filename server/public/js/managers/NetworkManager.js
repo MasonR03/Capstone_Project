@@ -185,6 +185,23 @@ class NetworkManager {
   }
 
   /**
+   * Request the current authoritative collectible star list.
+   */
+  emitRequestCollectibleStars() {
+    this.emit('requestCollectibleStars');
+  }
+
+  /**
+   * Request collection of an authoritative collectible star.
+   *
+   * @param {string} starId
+   */
+  emitCollectibleStar(starId) {
+    if (!starId) return;
+    this.emit('collectCollectibleStar', { starId });
+  }
+
+  /**
    * Emit class choice.
    *
    * @param {string|Object} payload

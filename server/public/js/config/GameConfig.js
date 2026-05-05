@@ -122,6 +122,15 @@ const GameConfig = {
     pingInterval: 1000
   },
 
+  // Collectible settings
+  collectibles: {
+    stars: {
+      collectRadius: 40,
+      defaultXpValue: 30,
+      defaultPointValue: 1
+    }
+  },
+
   // Audio settings
   audio: {
     defaultSfxVolume: 1
@@ -178,6 +187,7 @@ const GameConfig = {
     hitSound: 'assets/hit.mp3',
     boostSound: 'assets/boost.mp3',
     weaponHitSound: 'assets/weaponhit.m4a',
+    collectibleStar: 'assets/Star.png',
 
     menuIn: 'assets/MenuSliderIn.png',
     menuOut: 'assets/MenuSliderOut.png',

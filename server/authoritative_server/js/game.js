@@ -6,15 +6,18 @@ const UI = require('./ui');
 const EntityManager = require('./managers/EntityManager');
 const BulletManager = require('./managers/BulletManager');
 const ShootingStarManager = require('./managers/ShootingStarManager');
+const CollectibleStarManager = require('./managers/CollectibleStarManager');
 const {
   normalizeUsername,
   getOrCreateProfile,
-  updateProfile
+  updateProfile,
+  recordStarCollected
 } = require('../../persistence/playerProfiles');
 
 // EntityManager and BulletManager instances (initialized in initializeServer)
 let entityManager = null;
 let bulletManager = null;
+let collectibleStarManager = null;
 
 // Global constants (can be accessed via EntityManager .worldConfig)
 const WORLD_WIDTH = 2000;
@@ -82,6 +85,15 @@ const BOOST_CONFIG = {
   maxSpeedMultiplier: 1.65
 };
 
+const COLLECTIBLE_STAR_CONFIG = {
+  maxCount: 6,
+  spawnIntervalMs: 3000,
+  spawnMargin: 100,
+  collectRadius: 58,
+  xpValue: 30,
+  pointValue: 1
+};
+
 // Respawn delay in ms
 const RESPAWN_DELAY = 3000;
 
@@ -128,6 +140,12 @@ function initializeServer(io) {
     { width: WORLD_WIDTH, height: WORLD_HEIGHT },
     WEAPON_CONFIG
   );
+
+  collectibleStarManager = new CollectibleStarManager(
+    { width: WORLD_WIDTH, height: WORLD_HEIGHT },
+    COLLECTIBLE_STAR_CONFIG
+  );
+  collectibleStarManager.fillToCap();
 
   console.log('✅ Physics world initialized');
 
@@ -224,6 +242,7 @@ function initializeServer(io) {
 
     // Send current state to new player
     socket.emit('currentPlayers', entityManager.serializeAll());
+    socket.emit('collectibleStarsSnapshot', collectibleStarManager.serializeAll());
 
     // Notify others
     socket.broadcast.emit('newPlayer', ship.serialize());
@@ -233,6 +252,10 @@ function initializeServer(io) {
       if (typeof callback === 'function') {
         callback();
       }
+    });
+
+    socket.on('requestCollectibleStars', () => {
+      socket.emit('collectibleStarsSnapshot', collectibleStarManager.serializeAll());
     });
 
     // Auto-load profile on connection (replaces old setPlayerName-triggered load)
@@ -339,6 +362,25 @@ function initializeServer(io) {
       }
     });
 
+    socket.on('collectCollectibleStar', (payload) => {
+      const ship = entityManager.getShip(socket.id);
+      const star = collectibleStarManager.tryCollect(payload, ship);
+      if (!star) return;
+
+      io.emit('collectibleStarCollected', {
+        starId: star.id,
+        collectorId: socket.id,
+        x: star.x,
+        y: star.y,
+        xpValue: star.xpValue,
+        pointValue: star.pointValue
+      });
+
+      if (socket.data.username) {
+        void recordStarCollected(socket.data.username);
+      }
+    });
+
     // Handle disconnect
     socket.on('disconnect', () => {
       const ship = entityManager.getShip(socket.id);
@@ -387,6 +429,11 @@ function initializeServer(io) {
     lastTime = currentTime;
 
     shootingStarManager.update(delta);
+    const spawnedCollectibleStars = collectibleStarManager.update(delta);
+    spawnedCollectibleStars.forEach((star) => {
+      io.emit('collectibleStarSpawned', star);
+    });
+
     updateGame(io, frameCount, delta);
     frameCount++;
   }, 1000 / 60);
@@ -437,6 +484,8 @@ function handleShipKilled(io, victimId, killerId) {
       hp: ship.hp,
       maxHp: ship.maxHp
     });
+
+    io.to(victimId).emit('collectibleStarsSnapshot', collectibleStarManager.serializeAll());
 
     console.log('🔄 Ship respawned:', victimId);
   }, RESPAWN_DELAY);

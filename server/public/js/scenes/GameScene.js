@@ -47,6 +47,8 @@ class GameScene extends Phaser.Scene {
 
     // Collectibles
     this.collectibleStars = null;
+    this.collectibleStarsById = new Map();
+    this._pendingStarCollects = new Map();
   }
 
      /**
@@ -94,6 +96,7 @@ class GameScene extends Phaser.Scene {
 
     // Backdrop
     this.load.image('backdrop', GameConfig.assets.backdrop);
+    this.load.image('collectible_star', GameConfig.assets.collectibleStar);
 
     // Bullet
     this.load.image('bullet', GameConfig.assets.bullet);
@@ -196,14 +199,6 @@ class GameScene extends Phaser.Scene {
       immovable: true
     });
 
-    this.time.addEvent({
-      delay: 3000,
-      loop: true,
-      callback: () => {
-        this.spawnCollectibleStar();
-      }
-    });
-
     // Passive point gain
     this.time.addEvent({
       delay: 1000,
@@ -288,12 +283,12 @@ class GameScene extends Phaser.Scene {
     const socketId = gameState.getSocketId();
     const minimapData = this.entityManager ? this.entityManager.getMinimapData() : {};
 
-    const starData = this.collectibleStars
-      ? this.collectibleStars.getChildren().map((star) => ({
-          x: star.x,
-          y: star.y
-        }))
-      : [];
+    const starData = Array.from(this.collectibleStarsById.values())
+      .filter((star) => star && star.active)
+      .map((star) => ({
+        x: star.x,
+        y: star.y
+      }));
 
     uiManager.updateMinimap({
       players: minimapData,
@@ -335,41 +330,90 @@ class GameScene extends Phaser.Scene {
   }
 
   /**
-   * Spawn a collectible star.
+   * Sync collectible stars from the authoritative server snapshot.
+   *
+   * @param {Array<Object>} stars
    */
-  spawnCollectibleStar() {
-    if (!this.collectibleStars) return;
+  syncCollectibleStars(stars = []) {
+    if (!Array.isArray(stars)) return;
 
-    const x = Phaser.Math.Between(100, GameConfig.world.width - 100);
-    const y = Phaser.Math.Between(100, GameConfig.world.height - 100);
+    const seen = new Set();
 
-    const star = this.collectibleStars.create(x, y, 'glow_particle');
-    if (!star) return;
+    stars.forEach((starData) => {
+      const star = this.spawnCollectibleStar(starData);
+      if (!star) return;
+      star.collectRequested = false;
+      seen.add(star.starId);
+    });
 
-    star.setScale(0.55);
-    star.setAlpha(0.9);
-    star.setDepth(2);
-
-    star.xpValue = 10;
-    star.pointValue = 1;
-
-    this.tweens.add({
-      targets: star,
-      alpha: 0.45,
-      scale: 0.42,
-      duration: 650,
-      yoyo: true,
-      repeat: -1
+    Array.from(this.collectibleStarsById.entries()).forEach(([starId, star]) => {
+      if (!seen.has(starId)) {
+        this._removeCollectibleStar(star, { playEffect: false });
+      }
     });
   }
 
   /**
-   * Check for local star collection.
+   * Render or update a server-owned collectible star.
+   *
+   * @param {Object} starData
+   * @returns {*}
+   */
+  spawnCollectibleStar(starData = {}) {
+    if (!this.collectibleStars) return null;
+
+    const starId = starData.id || starData.starId;
+    const x = Number(starData.x);
+    const y = Number(starData.y);
+    const defaultXpValue = GameConfig.collectibles?.stars?.defaultXpValue || 30;
+    const defaultPointValue = GameConfig.collectibles?.stars?.defaultPointValue || 1;
+
+    if (!starId || !Number.isFinite(x) || !Number.isFinite(y)) return null;
+
+    const existing = this.collectibleStarsById.get(starId);
+    if (existing && existing.active) {
+      existing.x = x;
+      existing.y = y;
+      existing.xpValue = Number.isFinite(starData.xpValue) ? starData.xpValue : existing.xpValue;
+      existing.pointValue = Number.isFinite(starData.pointValue) ? starData.pointValue : existing.pointValue;
+      return existing;
+    }
+
+    const textureKey = this.textures.exists('collectible_star')
+      ? 'collectible_star'
+      : 'glow_particle';
+    const star = this.collectibleStars.create(x, y, textureKey);
+    if (!star) return null;
+
+    star.starId = starId;
+    star.collectRequested = false;
+    star.xpValue = Number.isFinite(starData.xpValue) ? starData.xpValue : defaultXpValue;
+    star.pointValue = Number.isFinite(starData.pointValue) ? starData.pointValue : defaultPointValue;
+
+    star.setScale(0.9);
+    star.setAlpha(0.9);
+    star.setDepth(2);
+
+    star.collectibleTween = this.tweens.add({
+      targets: star,
+      alpha: 0.62,
+      scale: 0.72,
+      duration: 650,
+      yoyo: true,
+      repeat: -1
+    });
+
+    this.collectibleStarsById.set(starId, star);
+    return star;
+  }
+
+  /**
+   * Check whether the local player can request collection of a server star.
    *
    * @private
    */
   _checkLocalStarCollection() {
-    if (!this.entityManager || !this.collectibleStars) return;
+    if (!this.entityManager || !this.collectibleStars || !networkManager.isConnected()) return;
 
     const localShip = this.entityManager.getLocalShip
       ? this.entityManager.getLocalShip()
@@ -382,47 +426,143 @@ class GameScene extends Phaser.Scene {
 
     if (typeof localX !== 'number' || typeof localY !== 'number') return;
 
-    const stars = this.collectibleStars.getChildren();
+    const collectRadius = GameConfig.collectibles?.stars?.collectRadius || 40;
+    const stars = Array.from(this.collectibleStarsById.values());
 
     for (let i = 0; i < stars.length; i++) {
       const star = stars[i];
-      if (!star || !star.active) continue;
+      if (!star || !star.active || star.collectRequested) continue;
 
       const dist = Phaser.Math.Distance.Between(localX, localY, star.x, star.y);
-      if (dist <= 40) {
-        this.collectStar(star);
+      if (dist <= collectRadius) {
+        this._requestCollectibleStar(star);
       }
     }
   }
 
   /**
-   * Handle a collected star.
+   * Ask the server to collect a star.
    *
    * @param {*} star
+   * @private
    */
-  collectStar(star) {
+  _requestCollectibleStar(star) {
+    if (!star?.starId) return;
+
+    star.collectRequested = true;
+    networkManager.emitCollectibleStar(star.starId);
+
+    this._clearPendingStarCollect(star.starId);
+    const timer = this.time.delayedCall(800, () => {
+      this._pendingStarCollects.delete(star.starId);
+
+      const activeStar = this.collectibleStarsById.get(star.starId);
+      if (activeStar && activeStar.active) {
+        activeStar.collectRequested = false;
+      }
+    });
+
+    this._pendingStarCollects.set(star.starId, timer);
+  }
+
+  /**
+   * Handle a server-confirmed collected star.
+   *
+   * @param {*} star
+   * @param {Object} options
+   */
+  collectStar(star, options = {}) {
     if (!star || !star.active) return;
+
+    const defaultXpValue = GameConfig.collectibles?.stars?.defaultXpValue || 30;
+    const defaultPointValue = GameConfig.collectibles?.stars?.defaultPointValue || 1;
+    const xpValue = Number.isFinite(options.xpValue) ? options.xpValue : (star.xpValue || defaultXpValue);
+    const pointValue = Number.isFinite(options.pointValue) ? options.pointValue : (star.pointValue || defaultPointValue);
+    const grantRewards = !!options.grantRewards;
+
+    this._removeCollectibleStar(star, { playEffect: true });
+
+    if (grantRewards) {
+      this._grantCollectedStarRewards(xpValue, pointValue);
+    }
+  }
+
+  /**
+   * Remove one rendered collectible star.
+   *
+   * @param {*} star
+   * @param {Object} options
+   * @private
+   */
+  _removeCollectibleStar(star, options = {}) {
+    if (!star) return;
 
     const x = star.x;
     const y = star.y;
-    const xpValue = star.xpValue || 10;
-    const pointValue = star.pointValue || 1;
 
-    star.destroy();
-
-    if (uiManager.levelPanel) {
-      if (uiManager.levelPanel.gainXp) {
-        uiManager.levelPanel.gainXp(xpValue);
-      }
-
-      if (uiManager.levelPanel.addPoint) {
-        uiManager.levelPanel.addPoint(pointValue);
-      }
-
-      this.playerProgress = uiManager.getPlayerProgress();
-      gameState.setPlayerProgress(this.playerProgress);
+    if (star.starId) {
+      this._clearPendingStarCollect(star.starId);
+      this.collectibleStarsById.delete(star.starId);
     }
 
+    if (star.collectibleTween) {
+      star.collectibleTween.stop();
+      star.collectibleTween = null;
+    }
+
+    if (star.active && star.destroy) {
+      star.destroy();
+    }
+
+    if (options.playEffect) {
+      this._spawnStarCollectBurst(x, y);
+    }
+  }
+
+  /**
+   * Clear a pending local collection request.
+   *
+   * @param {string} starId
+   * @private
+   */
+  _clearPendingStarCollect(starId) {
+    const timer = this._pendingStarCollects.get(starId);
+    if (timer) {
+      timer.remove(false);
+    }
+    this._pendingStarCollects.delete(starId);
+  }
+
+  /**
+   * Add rewards for a local star collection.
+   *
+   * @param {number} xpValue
+   * @param {number} pointValue
+   * @private
+   */
+  _grantCollectedStarRewards(xpValue, pointValue) {
+    if (!uiManager.levelPanel) return;
+
+    if (uiManager.levelPanel.gainXp) {
+      uiManager.levelPanel.gainXp(xpValue);
+    }
+
+    if (uiManager.levelPanel.addPoint) {
+      uiManager.levelPanel.addPoint(pointValue);
+    }
+
+    this.playerProgress = uiManager.getPlayerProgress();
+    gameState.setPlayerProgress(this.playerProgress);
+  }
+
+  /**
+   * Spawn the collectible star pickup burst.
+   *
+   * @param {number} x
+   * @param {number} y
+   * @private
+   */
+  _spawnStarCollectBurst(x, y) {
     const particles = this.add.particles(x, y, 'glow_particle', {
       speed: { min: 20, max: 90 },
       scale: { start: 0.35, end: 0 },
@@ -810,6 +950,32 @@ class GameScene extends Phaser.Scene {
       this.entityManager.removeShip(playerId);
     });
 
+    socket.on('collectibleStarsSnapshot', (stars) => {
+      this.syncCollectibleStars(stars);
+    });
+
+    socket.on('collectibleStarSpawned', (starData) => {
+      this.spawnCollectibleStar(starData);
+    });
+
+    socket.on('collectibleStarCollected', (data) => {
+      const star = this.collectibleStarsById.get(data?.starId);
+      const grantRewards = this.entityManager?.isLocalPlayer?.(data?.collectorId);
+
+      if (star) {
+        this.collectStar(star, {
+          grantRewards,
+          xpValue: data?.xpValue,
+          pointValue: data?.pointValue
+        });
+      } else if (grantRewards) {
+        this._grantCollectedStarRewards(
+          data?.xpValue || GameConfig.collectibles?.stars?.defaultXpValue || 30,
+          data?.pointValue || GameConfig.collectibles?.stars?.defaultPointValue || 1
+        );
+      }
+    });
+
     socket.on('bulletHit', (data) => {
       this._playShipHitCue(data);
       this._playWeaponHitSound(data);
@@ -844,6 +1010,7 @@ class GameScene extends Phaser.Scene {
           this._lastLocalHp = data.hp;
           this._lastLocalMaxHp = data.maxHp;
           this._boostCooldownUntil = 0;
+          networkManager.emitRequestCollectibleStars();
         }
       }
     });
@@ -880,6 +1047,10 @@ class GameScene extends Phaser.Scene {
 
       this._ensureCameraFollow();
     });
+
+    if (networkManager.isConnected()) {
+      networkManager.emitRequestCollectibleStars();
+    }
   }
 
   handleResize(width, height) {
