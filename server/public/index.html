@@ -93,6 +93,38 @@
         border-color: #ffcc66;
         background: linear-gradient(180deg, #5a4a26, #3d3018);
       }
+      .music-controls {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .music-volume-control {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        color: #c0c8d4;
+        font-family: 'Orbitron', sans-serif;
+        font-size: 10px;
+        font-weight: 600;
+        letter-spacing: 1.2px;
+        text-transform: uppercase;
+        white-space: nowrap;
+      }
+      .music-volume-slider {
+        width: 96px;
+        height: 16px;
+        cursor: pointer;
+        background: transparent;
+        accent-color: #00ffff;
+      }
+      .music-volume-slider:focus-visible {
+        outline: 1px solid #00ffff;
+        outline-offset: 2px;
+      }
+      .music-volume-value {
+        min-width: 30px;
+        text-align: right;
+      }
 
       /* HUD bars — floating upper-right over the game canvas */
       .hud-bars-wrapper {
@@ -298,7 +330,9 @@
 
     .login-music-toggle {
       display: flex;
+      align-items: center;
       justify-content: center;
+      gap: 10px;
       width: 100%;
       margin-top: -12px;
     }
@@ -519,8 +553,13 @@
       <div class="login-container">
         <h1 class="login-title">ORBITFALL</h1>
         <p class="login-subtitle">Welcome, Pilot</p>
-        <div class="login-music-toggle">
+        <div class="login-music-toggle music-controls">
           <button type="button" class="toolbar-btn music-toggle-btn music-off" aria-pressed="false">MUSIC OFF</button>
+          <label class="music-volume-control">
+            <span>VOL</span>
+            <input type="range" class="music-volume-slider" min="0" max="100" step="1" value="2" aria-label="Music volume" />
+            <span class="music-volume-value">2%</span>
+          </label>
         </div>
 
         <!-- Tabs -->
@@ -595,7 +634,14 @@
       </div>
       <div class="toolbar-section toolbar-center"></div>
       <div class="toolbar-section toolbar-right">
-        <button type="button" class="toolbar-btn music-toggle-btn music-off" aria-pressed="false">MUSIC OFF</button>
+        <div class="music-controls">
+          <button type="button" class="toolbar-btn music-toggle-btn music-off" aria-pressed="false">MUSIC OFF</button>
+          <label class="music-volume-control">
+            <span>VOL</span>
+            <input type="range" class="music-volume-slider" min="0" max="100" step="1" value="2" aria-label="Music volume" />
+            <span class="music-volume-value">2%</span>
+          </label>
+        </div>
         <button id="debug-button" class="toolbar-btn">DEBUG</button>
       </div>
     </div>
@@ -640,11 +686,30 @@
         const theme = document.getElementById('main-theme');
         if (!theme) return;
 
-        const musicVolume = 0.02;
+        let musicVolume = 0.02;
         const buttons = Array.from(document.querySelectorAll('.music-toggle-btn'));
+        const volumeSliders = Array.from(document.querySelectorAll('.music-volume-slider'));
+        const volumeValues = Array.from(document.querySelectorAll('.music-volume-value'));
         let musicEnabled = false;
 
         theme.volume = musicVolume;
+
+        const updateVolumeControls = () => {
+          const volumePercent = Math.round(musicVolume * 100);
+          volumeSliders.forEach((slider) => {
+            slider.value = String(volumePercent);
+          });
+          volumeValues.forEach((value) => {
+            value.textContent = `${volumePercent}%`;
+          });
+        };
+
+        const setMusicVolume = (value) => {
+          const volumePercent = Math.max(0, Math.min(100, Number(value) || 0));
+          musicVolume = volumePercent / 100;
+          theme.volume = musicVolume;
+          updateVolumeControls();
+        };
 
         const updateButtons = () => {
           const label = musicEnabled ? 'MUSIC ON' : 'MUSIC OFF';
@@ -680,6 +745,16 @@
           });
         });
 
+        volumeSliders.forEach((slider) => {
+          slider.addEventListener('input', (event) => {
+            setMusicVolume(event.target.value);
+            if (musicEnabled && theme.paused) {
+              playTheme();
+            }
+          });
+        });
+
+        updateVolumeControls();
         updateButtons();
         playTheme();
 
