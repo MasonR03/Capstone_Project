@@ -37,6 +37,10 @@ class GameScene extends Phaser.Scene {
     this._shipHitTintTimers = new Map();
     this._boostCooldownMs = GameConfig.boost.cooldownMs;
     this._boostCooldownUntil = 0;
+    this._lowHpWarningText = null;
+    this._lowHpWarningTween = null;
+    this._lowHpSound = null;
+    this._lowHpActive = false;
 
     // Progress
     this.playerProgress = cloneProgress(PLAYER_PROGRESS_DEFAULTS);
@@ -102,6 +106,7 @@ class GameScene extends Phaser.Scene {
     this.load.image('bullet', GameConfig.assets.bullet);
     this.load.audio('laser_fire', GameConfig.assets.laserSound);
     this.load.audio('player_hit', GameConfig.assets.hitSound);
+    this.load.audio('low_hp', GameConfig.assets.lowHpSound);
     this.load.audio('boost_fire', GameConfig.assets.boostSound);
     this.load.audio('weapon_hit', GameConfig.assets.weaponHitSound);
     this.load.audio('level_up', GameConfig.assets.levelUpSound);
@@ -254,6 +259,7 @@ class GameScene extends Phaser.Scene {
     }
 
     this._checkLocalStarCollection();
+    this._updateLowHpWarning();
 
     if (networkManager.isConnected()) {
       networkManager.emitPlayerInput(input);
@@ -681,6 +687,198 @@ class GameScene extends Phaser.Scene {
   }
 
   /**
+   * Position and volume-sync the low-HP warning while active.
+   *
+   * @private
+   */
+  _updateLowHpWarning() {
+    if (!this._lowHpActive) return;
+
+    const position = this._getLocalPlayerLowHpWarningPosition();
+
+    if (this._lowHpWarningText) {
+      this._lowHpWarningText.setPosition(position.x, position.y);
+    }
+
+    if (this._lowHpSound && this._lowHpSound.isPlaying && this._lowHpSound.setVolume) {
+      this._lowHpSound.setVolume(GameConfig.getSfxVolumeFor(0.68));
+    }
+  }
+
+  /**
+   * Update low-HP warning state from authoritative HP.
+   *
+   * @param {number} hp
+   * @private
+   */
+  _setLowHpWarningState(hp) {
+    const nextHp = Number(hp);
+    const threshold = GameConfig.warnings?.lowHpThreshold ?? 50;
+    const shouldWarn = Number.isFinite(nextHp) && nextHp < threshold;
+
+    if (shouldWarn === this._lowHpActive) {
+      if (shouldWarn) this._updateLowHpWarning();
+      return;
+    }
+
+    this._lowHpActive = shouldWarn;
+
+    if (shouldWarn) {
+      this._showLowHpWarning();
+      this._startLowHpSound();
+    } else {
+      this._hideLowHpWarning();
+      this._stopLowHpSound();
+    }
+  }
+
+  /**
+   * Create/show the low-HP warning text.
+   *
+   * @private
+   */
+  _showLowHpWarning() {
+    const position = this._getLocalPlayerLowHpWarningPosition();
+
+    if (!this._lowHpWarningText) {
+      this._lowHpWarningText = this.add.text(position.x, position.y, 'LOW HP - HULL BREACHED!', {
+        font: '13px Orbitron, sans-serif',
+        fill: '#ff3333',
+        align: 'center',
+        stroke: '#180000',
+        strokeThickness: 4
+      });
+
+      this._lowHpWarningText.setOrigin(0.5, 0.5);
+      this._lowHpWarningText.setDepth(7);
+
+      if (this._lowHpWarningText.setShadow) {
+        this._lowHpWarningText.setShadow(0, 0, '#ff0000', 12, true, true);
+      }
+    }
+
+    this._lowHpWarningText.setVisible(true);
+    this._lowHpWarningText.setAlpha(1);
+    this._lowHpWarningText.setScale(1);
+
+    if (this._lowHpWarningTween) {
+      this._lowHpWarningTween.stop();
+      this._lowHpWarningTween = null;
+    }
+
+    this._lowHpWarningTween = this.tweens.add({
+      targets: this._lowHpWarningText,
+      alpha: { from: 1, to: 0.48 },
+      scale: { from: 1, to: 1.08 },
+      duration: 520,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut'
+    });
+  }
+
+  /**
+   * Hide the low-HP warning text.
+   *
+   * @private
+   */
+  _hideLowHpWarning() {
+    if (this._lowHpWarningTween) {
+      this._lowHpWarningTween.stop();
+      this._lowHpWarningTween = null;
+    }
+
+    if (this._lowHpWarningText) {
+      this._lowHpWarningText.setVisible(false);
+    }
+  }
+
+  /**
+   * Get the warning position below the local player.
+   *
+   * @returns {{x:number,y:number}}
+   * @private
+   */
+  _getLocalPlayerLowHpWarningPosition() {
+    const localShip = this.entityManager?.getLocalShip?.();
+    const sprite = localShip?.sprite;
+    const offset = GameConfig.sprites.ship.height + 26;
+
+    if (sprite && sprite.active) {
+      return {
+        x: sprite.x,
+        y: sprite.y + offset
+      };
+    }
+
+    const position = localShip?.getPosition?.();
+    const fallbackX =
+      position?.x ??
+      localShip?.predicted?.x ??
+      localShip?.x ??
+      localShip?.serverState?.x;
+    const fallbackY =
+      position?.y ??
+      localShip?.predicted?.y ??
+      localShip?.y ??
+      localShip?.serverState?.y;
+
+    if (Number.isFinite(fallbackX) && Number.isFinite(fallbackY)) {
+      return {
+        x: fallbackX,
+        y: fallbackY + offset
+      };
+    }
+
+    const view = this.cameras?.main?.worldView;
+    return {
+      x: view ? view.centerX : GameConfig.world.width / 2,
+      y: view ? view.centerY + 40 : GameConfig.world.height / 2
+    };
+  }
+
+  /**
+   * Start the low-HP looping sound.
+   *
+   * @private
+   */
+  _startLowHpSound() {
+    if (!this.sound || !this.cache.audio.exists('low_hp')) return;
+
+    try {
+      if (!this._lowHpSound) {
+        this._lowHpSound = this.sound.add('low_hp', {
+          loop: true,
+          volume: GameConfig.getSfxVolumeFor(0.68)
+        });
+      }
+
+      if (this._lowHpSound.setVolume) {
+        this._lowHpSound.setVolume(GameConfig.getSfxVolumeFor(0.68));
+      }
+
+      if (!this._lowHpSound.isPlaying) {
+        this._lowHpSound.play();
+      }
+    } catch (error) {
+      // Audio playback can be blocked until the browser unlocks the sound context.
+    }
+  }
+
+  /**
+   * Stop the low-HP looping sound.
+   *
+   * @private
+   */
+  _stopLowHpSound() {
+    try {
+      if (this._lowHpSound && this._lowHpSound.isPlaying) {
+        this._lowHpSound.stop();
+      }
+    } catch (error) {}
+  }
+
+  /**
    * Track authoritative local HP and play feedback when it drops.
    *
    * @param {Object} serverState
@@ -701,6 +899,10 @@ class GameScene extends Phaser.Scene {
 
       if (hasPreviousHp && !maxHpChanged && damageAmount > 0) {
         this._playDamageCue(damageAmount, hasMaxHp ? nextMaxHp : prevMaxHp);
+      }
+
+      if (hasHp) {
+        this._setLowHpWarningState(nextHp);
       }
 
       this._lastLocalHp = nextHp;
@@ -1123,6 +1325,7 @@ class GameScene extends Phaser.Scene {
       if (localState) {
         this._lastLocalHp = localState.hp;
         this._lastLocalMaxHp = localState.maxHp;
+        this._setLowHpWarningState(localState.hp);
         this._trackLocalBoost(localState);
       }
 
@@ -1186,6 +1389,7 @@ class GameScene extends Phaser.Scene {
         if (Number.isFinite(data?.hp) && Number.isFinite(data?.maxHp)) {
           this._lastLocalHp = data.hp;
           this._lastLocalMaxHp = data.maxHp;
+          this._setLowHpWarningState(data.hp);
           gameState.updateLocalPlayerStats({
             hp: data.hp,
             maxHp: data.maxHp
@@ -1231,6 +1435,7 @@ class GameScene extends Phaser.Scene {
           ship.predicted.vy = 0;
           this._lastLocalHp = data.hp;
           this._lastLocalMaxHp = data.maxHp;
+          this._setLowHpWarningState(data.hp);
           this._boostCooldownUntil = 0;
           networkManager.emitRequestCollectibleStars();
         }

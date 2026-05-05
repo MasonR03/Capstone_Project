@@ -122,6 +122,11 @@ const GameConfig = {
     playerEliminationXp: 100
   },
 
+  // Warning thresholds
+  warnings: {
+    lowHpThreshold: 50
+  },
+
   // Ping measurement interval
   network: {
     pingInterval: 1000
@@ -190,6 +195,7 @@ const GameConfig = {
     bullet: 'assets/bullet_defult.png',
     laserSound: 'assets/laser.m4a',
     hitSound: 'assets/hit.mp3',
+    lowHpSound: 'assets/lowhp.m4a',
     boostSound: 'assets/boost.mp3',
     weaponHitSound: 'assets/weaponhit.m4a',
     levelUpSound: 'assets/levelup.mp3',
