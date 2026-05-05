@@ -107,6 +107,8 @@ const COLLECTIBLE_STAR_CONFIG = {
 const ASTEROID_CONFIG = {
   maxActive: 4,
   spawnIntervalMs: 3600,
+  minSpeed: 75,
+  maxSpeed: 145,
   hp: 50,
   radius: 32,
   contactDamage: 35,

@@ -205,6 +205,7 @@ const GameConfig = {
     lowHpSound: 'assets/lowhp.m4a',
     boostSound: 'assets/boost.mp3',
     asteroid: 'assets/asteroid.png',
+    explodedAsteroid: 'assets/exploded_asteroid.png',
     asteroidBoom: 'assets/asteroidboom.mp3',
     weaponHitSound: 'assets/weaponhit.m4a',
     levelUpSound: 'assets/levelup.mp3',

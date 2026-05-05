@@ -104,6 +104,7 @@ class GameScene extends Phaser.Scene {
     this.load.image('backdrop', GameConfig.assets.backdrop);
     this.load.image('collectible_star', GameConfig.assets.collectibleStar);
     this.load.image('asteroid', GameConfig.assets.asteroid);
+    this.load.image('exploded_asteroid', GameConfig.assets.explodedAsteroid);
 
     // Bullet
     this.load.image('bullet', GameConfig.assets.bullet);
@@ -239,6 +240,9 @@ class GameScene extends Phaser.Scene {
    */
   update(time, delta) {
     this.shootingStars.update(delta);
+    if (this.asteroidRenderer) {
+      this.asteroidRenderer.update(delta);
+    }
 
     if (!gameState.isClassChosen()) return;
 

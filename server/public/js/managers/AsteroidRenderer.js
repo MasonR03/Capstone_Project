@@ -61,6 +61,26 @@ class AsteroidRenderer {
     });
   }
 
+  update(delta) {
+    const dt = Math.max(0, Math.min(0.05, delta / 1000));
+
+    this.asteroids.forEach((entry) => {
+      if (!entry?.sprite?.active) return;
+
+      entry.renderX += entry.vx * dt;
+      entry.renderY += entry.vy * dt;
+      entry.renderRotation += entry.angularVelocity * dt;
+
+      entry.renderX += (entry.targetX - entry.renderX) * 0.08;
+      entry.renderY += (entry.targetY - entry.renderY) * 0.08;
+      entry.renderRotation = this._lerpAngle(entry.renderRotation, entry.targetRotation, 0.08);
+
+      this._emitTrail(entry, entry.renderX, entry.renderY);
+      entry.sprite.setPosition(entry.renderX, entry.renderY);
+      entry.sprite.setRotation(entry.renderRotation);
+    });
+  }
+
   addOrUpdate(data = {}) {
     if (!data.id) return null;
 
@@ -84,6 +104,15 @@ class AsteroidRenderer {
       sprite,
       prevX: data.x,
       prevY: data.y,
+      renderX: data.x,
+      renderY: data.y,
+      targetX: data.x,
+      targetY: data.y,
+      vx: Number.isFinite(data.vx) ? data.vx : 0,
+      vy: Number.isFinite(data.vy) ? data.vy : 0,
+      renderRotation: data.rotation || 0,
+      targetRotation: data.rotation || 0,
+      angularVelocity: Number.isFinite(data.angularVelocity) ? data.angularVelocity : 0,
       radius,
       hp: Number.isFinite(data.hp) ? data.hp : GameConfig.asteroids.hp
     };
@@ -104,6 +133,7 @@ class AsteroidRenderer {
     this.asteroids.delete(id);
 
     if (options.playEffect && Number.isFinite(x) && Number.isFinite(y)) {
+      this._showExplodedAsteroid(x, y);
       this._spawnExplosion(x, y);
       this._playBoom();
     }
@@ -141,20 +171,24 @@ class AsteroidRenderer {
     const y = Number(data.y);
     if (!Number.isFinite(x) || !Number.isFinite(y)) return;
 
-    const dx = x - entry.prevX;
-    const dy = y - entry.prevY;
-    const distance = Math.sqrt(dx * dx + dy * dy);
-    if (distance > 0.1 && this.trailEmitter) {
-      const backX = x - (dx / distance) * (entry.radius * 0.55);
-      const backY = y - (dy / distance) * (entry.radius * 0.55);
-      this.trailEmitter.emitParticleAt(backX, backY, 2);
-    }
-
-    sprite.setPosition(x, y);
-    sprite.setRotation(Number.isFinite(data.rotation) ? data.rotation : sprite.rotation);
+    entry.targetX = x;
+    entry.targetY = y;
+    entry.vx = Number.isFinite(data.vx) ? data.vx : entry.vx;
+    entry.vy = Number.isFinite(data.vy) ? data.vy : entry.vy;
+    entry.targetRotation = Number.isFinite(data.rotation) ? data.rotation : entry.targetRotation;
+    entry.angularVelocity = Number.isFinite(data.angularVelocity) ? data.angularVelocity : entry.angularVelocity;
     entry.prevX = x;
     entry.prevY = y;
     entry.hp = Number.isFinite(data.hp) ? data.hp : entry.hp;
+  }
+
+  _emitTrail(entry, x, y) {
+    const speed = Math.sqrt(entry.vx * entry.vx + entry.vy * entry.vy);
+    if (speed <= 0.1 || !this.trailEmitter) return;
+
+    const backX = x - (entry.vx / speed) * (entry.radius * 0.55);
+    const backY = y - (entry.vy / speed) * (entry.radius * 0.55);
+    this.trailEmitter.emitParticleAt(backX, backY, 1);
   }
 
   _flashHit(asteroidId) {
@@ -184,6 +218,31 @@ class AsteroidRenderer {
     this.scene.time.delayedCall(680, () => {
       if (particles) particles.destroy();
     });
+  }
+
+  _showExplodedAsteroid(x, y) {
+    if (!this.scene.textures.exists('exploded_asteroid')) return;
+
+    const sprite = this.scene.add.image(x, y, 'exploded_asteroid')
+      .setDepth(1.45)
+      .setDisplaySize(GameConfig.asteroids.radius * 2.7, GameConfig.asteroids.radius * 2.7)
+      .setRotation(Math.random() * Math.PI * 2);
+
+    this.scene.tweens.add({
+      targets: sprite,
+      alpha: { from: 1, to: 0 },
+      scale: { from: 1, to: 1.25 },
+      duration: 900,
+      ease: 'Cubic.easeOut',
+      onComplete: () => sprite.destroy()
+    });
+  }
+
+  _lerpAngle(a, b, t) {
+    let diff = b - a;
+    while (diff < -Math.PI) diff += Math.PI * 2;
+    while (diff > Math.PI) diff -= Math.PI * 2;
+    return a + diff * t;
   }
 
   _playBoom() {
