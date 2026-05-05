@@ -9,6 +9,7 @@
 import GameConfig from '../config/GameConfig.js';
 
 const TEXTURE_KEY = 'glow_particle';
+const LASER_SOUND_KEY = 'laser_fire';
 const MIN_ANGLE_DELTA_SQ = 0.25; // pixels^2 — below this, keep last angle to avoid jitter
 
 class BulletRenderer {
@@ -28,6 +29,7 @@ class BulletRenderer {
 
     this._socket.on('bulletFired', (data) => {
       this._createBullet(data);
+      this._playFireSound();
     });
 
     this._socket.on('bulletUpdates', (bullets) => {
@@ -155,6 +157,18 @@ class BulletRenderer {
     });
 
     this._spawnMuzzleFlash(data.x, data.y, colorKey);
+  }
+
+  _playFireSound() {
+    if (!this._scene.sound || !this._scene.cache.audio.exists(LASER_SOUND_KEY)) return;
+
+    try {
+      this._scene.sound.play(LASER_SOUND_KEY, {
+        volume: 0.5
+      });
+    } catch (error) {
+      // Audio playback can be blocked until the browser unlocks the sound context.
+    }
   }
 
   _updateBullet(entry, b) {

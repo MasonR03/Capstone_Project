@@ -90,6 +90,7 @@ class GameScene extends Phaser.Scene {
 
     // Bullet
     this.load.image('bullet', GameConfig.assets.bullet);
+    this.load.audio('laser_fire', GameConfig.assets.laserSound);
 
     // Level menu
     this.load.image('menuIn', GameConfig.assets.menuIn);
