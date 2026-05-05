@@ -171,9 +171,11 @@ function initializeServer(io) {
     removeStalePlayers(io);
 
     const username = normalizeUsername(socket.request.session.username);
+    const isGuest = Boolean(socket.request.session.isGuest);
     console.log('🎮 User connected:', socket.id.substring(0, 8), '(' + username + ')');
 
     socket.data.username = username;
+    socket.data.isGuest = isGuest;
     socket.data.profileLoaded = false;
     socket.data.profileLoadPromise = null;
 
@@ -267,7 +269,7 @@ function initializeServer(io) {
     });
 
     // Auto-load profile on connection (replaces old setPlayerName-triggered load)
-    if (username) {
+    if (username && !isGuest) {
       socket.data.profileLoadPromise = getOrCreateProfile(username)
         .then((profile) => {
           socket.data.profileLoaded = true;
@@ -385,7 +387,7 @@ function initializeServer(io) {
         pointValue: star.pointValue
       });
 
-      if (socket.data.username) {
+      if (socket.data.username && !socket.data.isGuest) {
         void recordStarCollected(socket.data.username);
       }
     });
@@ -423,7 +425,7 @@ function initializeServer(io) {
       console.log('👋 User disconnected:', playerName);
 
       const username = socket.data.username || (ship && ship.playerName) || null;
-      if (username && ship) {
+      if (username && ship && !socket.data.isGuest) {
         void updateProfile(username, {
           xp: Number.isFinite(ship.xp) ? Math.max(0, Math.floor(ship.xp)) : 0,
           maxXp: Number.isFinite(ship.maxXp) ? Math.max(1, Math.floor(ship.maxXp)) : 100
