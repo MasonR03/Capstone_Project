@@ -34,6 +34,7 @@ class GameScene extends Phaser.Scene {
     this._lastLocalMaxHp = null;
     this._damageCueTimer = null;
     this._damageTintTimer = null;
+    this._shipHitTintTimers = new Map();
 
     // Progress
     this.playerProgress = cloneProgress(PLAYER_PROGRESS_DEFAULTS);
@@ -513,6 +514,87 @@ class GameScene extends Phaser.Scene {
   }
 
   /**
+   * Play visible feedback on a ship that took bullet damage.
+   *
+   * @param {Object} data
+   * @private
+   */
+  _playShipHitCue(data) {
+    const shipId = data?.shipId;
+    if (!shipId || !this.entityManager) return;
+    if (this.entityManager.isLocalPlayer(shipId)) return;
+
+    const ship = this.entityManager.getShip(shipId);
+    const sprite = ship?.sprite;
+    if (!ship || !sprite || !sprite.active) return;
+
+    this._flashHitShip(shipId, sprite);
+    this._spawnDamageNumber(ship, data.damage, data.killed);
+  }
+
+  /**
+   * Briefly tint a remote ship so attackers can confirm the hit.
+   *
+   * @param {string} shipId
+   * @param {*} sprite
+   * @private
+   */
+  _flashHitShip(shipId, sprite) {
+    sprite.setTint(0xff4f4f);
+
+    const existingTimer = this._shipHitTintTimers.get(shipId);
+    if (existingTimer) {
+      existingTimer.remove(false);
+    }
+
+    const timer = this.time.delayedCall(140, () => {
+      if (sprite.active && sprite.clearTint) {
+        sprite.clearTint();
+      }
+      this._shipHitTintTimers.delete(shipId);
+    });
+
+    this._shipHitTintTimers.set(shipId, timer);
+  }
+
+  /**
+   * Float damage text above a hit ship.
+   *
+   * @param {*} ship
+   * @param {number} damage
+   * @param {boolean} killed
+   * @private
+   */
+  _spawnDamageNumber(ship, damage, killed) {
+    const sprite = ship.sprite;
+    const x = sprite?.x ?? ship.x ?? 0;
+    const y = (sprite?.y ?? ship.y ?? 0) - 34;
+    const amount = Math.max(0, Math.floor(Number(damage) || 0));
+    const label = killed ? 'DESTROYED' : `-${amount}`;
+
+    const text = this.add.text(x, y, label, {
+      font: killed ? '13px Orbitron, sans-serif' : '18px Orbitron, sans-serif',
+      fill: killed ? '#ffdd66' : '#ff6666',
+      align: 'center',
+      stroke: '#000000',
+      strokeThickness: 3
+    });
+
+    text.setOrigin(0.5, 0.5);
+    text.setDepth(4);
+
+    this.tweens.add({
+      targets: text,
+      y: y - 30,
+      alpha: { from: 1, to: 0 },
+      scale: { from: killed ? 1.05 : 1, to: killed ? 1.3 : 1.18 },
+      duration: killed ? 760 : 520,
+      ease: 'Cubic.easeOut',
+      onComplete: () => text.destroy()
+    });
+  }
+
+  /**
    * Set up socket handlers.
    *
    * @private
@@ -549,6 +631,10 @@ class GameScene extends Phaser.Scene {
 
     socket.on('playerDisconnected', (playerId) => {
       this.entityManager.removeShip(playerId);
+    });
+
+    socket.on('bulletHit', (data) => {
+      this._playShipHitCue(data);
     });
 
     socket.on('playerKilled', (data) => {
