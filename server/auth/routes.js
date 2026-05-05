@@ -11,6 +11,11 @@ function looksLikeEmail(str) {
   return str.includes('@');
 }
 
+function setSessionUser(req, username, isGuest = false) {
+  req.session.username = username;
+  req.session.isGuest = isGuest;
+}
+
 router.post('/signup', async (req, res) => {
   const { username, email, password } = req.body;
 
@@ -45,7 +50,7 @@ router.post('/signup', async (req, res) => {
       const devPass = process.env.DEV_USER_PASSWORD || 'Password123!';
 
       if (input === devUser && password === devPass) {
-        req.session.username = devUser;
+        setSessionUser(req, devUser);
         return res.json({ username: devUser });
       }
 
@@ -98,8 +103,8 @@ router.post('/signup', async (req, res) => {
       });
     }
 
-    req.session.username = normalizedUsername;
-    res.json({ username: normalizedUsername });
+    setSessionUser(req, normalizedUsername);
+    res.json({ username: normalizedUsername, isGuest: false });
   } catch (err) {
     console.error('Signup error:', err);
     res.status(500).json({ error: 'Internal server error.' });
@@ -123,7 +128,7 @@ router.post('/login', async (req, res) => {
 
       // Allow "test" login without DB
       if (input === devUser && password === devPass) {
-        req.session.username = devUser;
+        setSessionUser(req, devUser);
         return res.json({ username: devUser });
       }
 
@@ -157,12 +162,44 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ error: 'Invalid username/email or password.' });
     }
 
-    req.session.username = profile.username;
-    res.json({ username: profile.username });
+    setSessionUser(req, profile.username);
+    res.json({ username: profile.username, isGuest: false });
   } catch (err) {
     console.error('Login error:', err);
     res.status(500).json({ error: 'Internal server error.' });
   }
+});
+
+router.post('/guest', async (req, res) => {
+  const { username } = req.body;
+
+  if (!username) {
+    return res.status(400).json({ error: 'Gamer tag is required.' });
+  }
+
+  const gamerTag = String(username).trim();
+  if (!USERNAME_RE.test(gamerTag)) {
+    return res.status(400).json({ error: 'Gamer tag must be 1-20 characters (letters, numbers, _ -).' });
+  }
+
+  const prisma = getPrismaClient();
+  if (prisma) {
+    try {
+      const existingProfile = await prisma.playerProfile.findUnique({
+        where: { username: gamerTag.toLowerCase() },
+      });
+
+      if (existingProfile && existingProfile.passwordHash) {
+        return res.status(409).json({ error: 'That gamer tag is reserved by an account.' });
+      }
+    } catch (err) {
+      console.error('Guest login error:', err);
+      return res.status(500).json({ error: 'Internal server error.' });
+    }
+  }
+
+  setSessionUser(req, gamerTag, true);
+  res.json({ username: gamerTag, isGuest: true });
 });
 
 router.post('/logout', (req, res) => {
@@ -178,7 +215,7 @@ router.post('/logout', (req, res) => {
 
 router.get('/me', (req, res) => {
   if (req.session && req.session.username) {
-    return res.json({ username: req.session.username });
+    return res.json({ username: req.session.username, isGuest: Boolean(req.session.isGuest) });
   }
   res.status(401).json({ error: 'Not logged in.' });
 });
@@ -186,6 +223,9 @@ router.get('/me', (req, res) => {
 router.get('/stats', async (req, res) => {
   if (!req.session || !req.session.username) {
     return res.status(401).json({ error: 'Not logged in.' });
+  }
+  if (req.session.isGuest) {
+    return res.status(403).json({ error: 'Guest players do not have saved stats.' });
   }
 
   const prisma = getPrismaClient();

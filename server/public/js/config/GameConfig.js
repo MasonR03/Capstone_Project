@@ -76,16 +76,17 @@ const GameConfig = {
     maxSpeed: 400,
     acceleration: 200,
     angularSpeed: 420 * (Math.PI / 180),
-    dragFactor: 0.988,
-    gripFactor: 0.1
+    dragFactor: 0.995,
+    gripFactor: 0.045
   },
 
   // Boost settings
   boost: {
     cooldownMs: 3000,
-    impulse: 360,
-    durationMs: 450,
-    maxSpeedMultiplier: 1.65
+    impulse: 430,
+    durationMs: 650,
+    momentumMs: 1400,
+    maxSpeedMultiplier: 2.1
   },
 
   // Movement sync

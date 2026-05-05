@@ -87,9 +87,10 @@ const WEAPON_CONFIG = {
 
 const BOOST_CONFIG = {
   cooldownMs: 3000,
-  impulse: 360,
-  durationMs: 450,
-  maxSpeedMultiplier: 1.65
+  impulse: 430,
+  durationMs: 650,
+  momentumMs: 1400,
+  maxSpeedMultiplier: 2.1
 };
 
 const COLLECTIBLE_STAR_CONFIG = {
@@ -171,9 +172,11 @@ function initializeServer(io) {
     removeStalePlayers(io);
 
     const username = normalizeUsername(socket.request.session.username);
+    const isGuest = Boolean(socket.request.session.isGuest);
     console.log('🎮 User connected:', socket.id.substring(0, 8), '(' + username + ')');
 
     socket.data.username = username;
+    socket.data.isGuest = isGuest;
     socket.data.profileLoaded = false;
     socket.data.profileLoadPromise = null;
 
@@ -235,6 +238,7 @@ function initializeServer(io) {
       boostCooldownMs: BOOST_CONFIG.cooldownMs,
       boostImpulse: BOOST_CONFIG.impulse,
       boostDurationMs: BOOST_CONFIG.durationMs,
+      boostMomentumMs: BOOST_CONFIG.momentumMs,
       boostMaxSpeedMultiplier: BOOST_CONFIG.maxSpeedMultiplier
     });
 
@@ -267,7 +271,7 @@ function initializeServer(io) {
     });
 
     // Auto-load profile on connection (replaces old setPlayerName-triggered load)
-    if (username) {
+    if (username && !isGuest) {
       socket.data.profileLoadPromise = getOrCreateProfile(username)
         .then((profile) => {
           socket.data.profileLoaded = true;
@@ -385,7 +389,7 @@ function initializeServer(io) {
         pointValue: star.pointValue
       });
 
-      if (socket.data.username) {
+      if (socket.data.username && !socket.data.isGuest) {
         void recordStarCollected(socket.data.username);
       }
     });
@@ -423,7 +427,7 @@ function initializeServer(io) {
       console.log('👋 User disconnected:', playerName);
 
       const username = socket.data.username || (ship && ship.playerName) || null;
-      if (username && ship) {
+      if (username && ship && !socket.data.isGuest) {
         void updateProfile(username, {
           xp: Number.isFinite(ship.xp) ? Math.max(0, Math.floor(ship.xp)) : 0,
           maxXp: Number.isFinite(ship.maxXp) ? Math.max(1, Math.floor(ship.maxXp)) : 100

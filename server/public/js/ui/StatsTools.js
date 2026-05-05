@@ -32,6 +32,13 @@ class StatsTools {
       return;
     }
 
+    if (window.isGuest) {
+      this.statsButton.style.display = 'none';
+      this.statsPanel.style.display = 'none';
+      localStorage.setItem('statsPanelVisible', 'false');
+      return;
+    }
+
     this.elements = {
       username: document.getElementById('stats-username'),
       email: document.getElementById('stats-email'),

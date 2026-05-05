@@ -773,6 +773,7 @@
         <div class="auth-tabs">
           <button class="auth-tab active" data-tab="login">Login</button>
           <button class="auth-tab" data-tab="signup">Sign Up</button>
+          <button class="auth-tab" data-tab="guest">Guest</button>
         </div>
 
         <!-- Login panel -->
@@ -813,6 +814,15 @@
               <button type="button" class="pw-toggle" data-target="signup-confirm" aria-label="Show password"><svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg></button>
             </div>
             <button type="submit">Create Account</button>
+          </form>
+        </div>
+
+        <!-- Guest panel -->
+        <div class="auth-panel" id="panel-guest">
+          <form class="login-form" id="guest-form">
+            <label for="guest-username">Gamer Tag</label>
+            <input type="text" id="guest-username" placeholder="Choose a gamer tag" maxlength="20" autocomplete="nickname" required />
+            <button type="submit">Play as Guest</button>
           </form>
         </div>
 

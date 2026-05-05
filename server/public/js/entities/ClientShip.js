@@ -67,10 +67,13 @@ class ClientShip {
       cooldownMs: serverState.boostCooldownMs || GameConfig.boost.cooldownMs,
       impulse: GameConfig.boost.impulse,
       durationMs: serverState.boostDurationMs || GameConfig.boost.durationMs,
+      momentumMs: serverState.boostMomentumMs || GameConfig.boost.momentumMs,
       maxSpeedMultiplier: GameConfig.boost.maxSpeedMultiplier
     };
     this._lastPredictedBoostAt = 0;
     this._boostActiveUntil = 0;
+    this._boostMomentumUntil = 0;
+    this._boostMomentumSpeedCap = 0;
     this._lastBoostSprayAt = 0;
 
     // World bounds from config
@@ -268,6 +271,10 @@ class ClientShip {
       this.boost.durationMs = serverState.boostDurationMs;
     }
 
+    if (Number.isFinite(serverState.boostMomentumMs)) {
+      this.boost.momentumMs = serverState.boostMomentumMs;
+    }
+
     if (
       Number.isFinite(serverState.boostCooldownRemainingMs) &&
       serverState.boostCooldownRemainingMs > 0
@@ -429,7 +436,7 @@ class ClientShip {
 
     // Clamp velocity to max
     const speed = Math.sqrt(this.predicted.vx ** 2 + this.predicted.vy ** 2);
-    const maxSpeed = this._getCurrentMaxSpeed();
+    const maxSpeed = this._getCurrentMaxSpeed(speed);
     if (speed > maxSpeed) {
       this.predicted.vx = (this.predicted.vx / speed) * maxSpeed;
       this.predicted.vy = (this.predicted.vy / speed) * maxSpeed;
@@ -459,10 +466,21 @@ class ClientShip {
     this._updateSprite(this.predicted.x, this.predicted.y, this.predicted.rotation);
   }
 
-  _getCurrentMaxSpeed() {
-    return Date.now() < this._boostActiveUntil
-      ? this.stats.maxSpeed * this.boost.maxSpeedMultiplier
-      : this.stats.maxSpeed;
+  _getCurrentMaxSpeed(currentSpeed = 0) {
+    const now = Date.now();
+    if (now < this._boostActiveUntil) {
+      return this.stats.maxSpeed * this.boost.maxSpeedMultiplier;
+    }
+
+    if (now < this._boostMomentumUntil && currentSpeed > this.stats.maxSpeed) {
+      const momentumCap = this._boostMomentumSpeedCap || currentSpeed;
+      return Math.min(
+        this.stats.maxSpeed * this.boost.maxSpeedMultiplier,
+        Math.max(this.stats.maxSpeed, momentumCap)
+      );
+    }
+
+    return this.stats.maxSpeed;
   }
 
   _applyBoostPrediction(input) {
@@ -476,6 +494,12 @@ class ClientShip {
     this.predicted.vy += Math.sin(angle) * this.boost.impulse;
     this._lastPredictedBoostAt = now;
     this._boostActiveUntil = now + this.boost.durationMs;
+    this._boostMomentumUntil = now + this.boost.durationMs + this.boost.momentumMs;
+    const boostSpeed = Math.sqrt(this.predicted.vx ** 2 + this.predicted.vy ** 2);
+    this._boostMomentumSpeedCap = Math.min(
+      this.stats.maxSpeed * this.boost.maxSpeedMultiplier,
+      boostSpeed
+    );
     this._emitBoostBurst();
   }
 
