@@ -87,9 +87,10 @@ const WEAPON_CONFIG = {
 
 const BOOST_CONFIG = {
   cooldownMs: 3000,
-  impulse: 360,
-  durationMs: 450,
-  maxSpeedMultiplier: 1.65
+  impulse: 430,
+  durationMs: 650,
+  momentumMs: 1400,
+  maxSpeedMultiplier: 2.1
 };
 
 const COLLECTIBLE_STAR_CONFIG = {
@@ -237,6 +238,7 @@ function initializeServer(io) {
       boostCooldownMs: BOOST_CONFIG.cooldownMs,
       boostImpulse: BOOST_CONFIG.impulse,
       boostDurationMs: BOOST_CONFIG.durationMs,
+      boostMomentumMs: BOOST_CONFIG.momentumMs,
       boostMaxSpeedMultiplier: BOOST_CONFIG.maxSpeedMultiplier
     });
 
