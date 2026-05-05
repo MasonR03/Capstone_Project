@@ -96,6 +96,7 @@ class GameScene extends Phaser.Scene {
     // Bullet
     this.load.image('bullet', GameConfig.assets.bullet);
     this.load.audio('laser_fire', GameConfig.assets.laserSound);
+    this.load.audio('player_hit', GameConfig.assets.hitSound);
 
     // Level menu
     this.load.image('menuIn', GameConfig.assets.menuIn);
@@ -486,7 +487,26 @@ class GameScene extends Phaser.Scene {
       this.cameras.main.shake(140, shakeIntensity, true);
     }
 
+    this._playHitSound(severity);
     this._flashLocalShip();
+  }
+
+  /**
+   * Play the local damage sound.
+   *
+   * @param {number} severity
+   * @private
+   */
+  _playHitSound(severity = 1) {
+    if (!this.sound || !this.cache.audio.exists('player_hit')) return;
+
+    try {
+      this.sound.play('player_hit', {
+        volume: Phaser.Math.Clamp(0.45 + severity * 0.25, 0.45, 0.7)
+      });
+    } catch (error) {
+      // Audio playback can be blocked until the browser unlocks the sound context.
+    }
   }
 
   /**
