@@ -68,6 +68,7 @@ class ClientShip {
     };
     this._lastPredictedBoostAt = 0;
     this._boostActiveUntil = 0;
+    this._lastBoostSprayAt = 0;
 
     // World bounds from config
     this.worldWidth = GameConfig.world.width;
@@ -171,6 +172,8 @@ class ClientShip {
    * @param {Object} serverState
    */
   updateFromServer(serverState) {
+    const wasBoostActive = this._isBoostActive();
+
     this.serverState = {
       x: serverState.x,
       y: serverState.y,
@@ -214,6 +217,9 @@ class ClientShip {
       serverState.boostActiveRemainingMs > 0
     ) {
       this._boostActiveUntil = Date.now() + serverState.boostActiveRemainingMs;
+      if (!wasBoostActive) {
+        this._emitBoostBurst();
+      }
     }
 
     // Update player name if changed
@@ -396,6 +402,90 @@ class ClientShip {
     this.predicted.vy += Math.sin(angle) * this.boost.impulse;
     this._lastPredictedBoostAt = now;
     this._boostActiveUntil = now + this.boost.durationMs;
+    this._emitBoostBurst();
+  }
+
+  _isBoostActive(now = Date.now()) {
+    return now < this._boostActiveUntil;
+  }
+
+  _emitBoostBurst() {
+    const pose = this._getVisualPose();
+    if (!pose) return;
+
+    this._spawnBoostThrusterParticles(pose.x, pose.y, pose.rotation, 10, true);
+    this._lastBoostSprayAt = 0;
+  }
+
+  _updateBoostThruster(x, y, rotation) {
+    const now = Date.now();
+    if (!this._isBoostActive(now)) return;
+    if (now - this._lastBoostSprayAt < 28) return;
+
+    this._lastBoostSprayAt = now;
+    this._spawnBoostThrusterParticles(x, y, rotation, 4, false);
+  }
+
+  _spawnBoostThrusterParticles(x, y, rotation, count, burst = false) {
+    if (!this.scene || !this.scene.textures.exists('glow_particle')) return;
+
+    const forwardAngle = rotation + 1.5;
+    const backAngle = forwardAngle + Math.PI;
+    const backOffset = GameConfig.sprites.ship.height * 0.58;
+    const originX = x + Math.cos(backAngle) * backOffset;
+    const originY = y + Math.sin(backAngle) * backOffset;
+    const spread = burst ? 0.95 : 0.55;
+
+    for (let i = 0; i < count; i++) {
+      const particleAngle = backAngle + ((Math.random() - 0.5) * spread);
+      const distance = burst
+        ? 34 + (Math.random() * 54)
+        : 18 + (Math.random() * 34);
+      const startJitter = (Math.random() - 0.5) * (burst ? 12 : 7);
+      const sideAngle = backAngle + Math.PI / 2;
+      const startX = originX + Math.cos(sideAngle) * startJitter;
+      const startY = originY + Math.sin(sideAngle) * startJitter;
+      const endX = startX + Math.cos(particleAngle) * distance;
+      const endY = startY + Math.sin(particleAngle) * distance;
+      const tint = Math.random() > 0.45 ? 0x66f7ff : 0xffb347;
+      const startScale = burst
+        ? 0.28 + (Math.random() * 0.24)
+        : 0.18 + (Math.random() * 0.18);
+
+      const particle = this.scene.add.image(startX, startY, 'glow_particle')
+        .setTint(tint)
+        .setBlendMode('ADD')
+        .setScale(startScale)
+        .setAlpha(burst ? 0.9 : 0.72)
+        .setDepth(0.95);
+
+      this.scene.tweens.add({
+        targets: particle,
+        x: endX,
+        y: endY,
+        alpha: 0,
+        scale: 0,
+        duration: burst ? 260 : 190,
+        ease: 'Cubic.easeOut',
+        onComplete: () => particle.destroy()
+      });
+    }
+  }
+
+  _getVisualPose() {
+    if (this.sprite) {
+      return {
+        x: this.sprite.x,
+        y: this.sprite.y,
+        rotation: this.sprite.rotation
+      };
+    }
+
+    return {
+      x: this.predicted?.x ?? this.x,
+      y: this.predicted?.y ?? this.y,
+      rotation: this.predicted?.rotation ?? this.rotation
+    };
   }
 
   /**
@@ -455,6 +545,8 @@ class ClientShip {
       this.nameText.x = x;
       this.nameText.y = y - GameConfig.sprites.nameOffset;
     }
+
+    this._updateBoostThruster(x, y, rotation);
   }
 
   /**

@@ -99,6 +99,7 @@ class GameScene extends Phaser.Scene {
     this.load.image('bullet', GameConfig.assets.bullet);
     this.load.audio('laser_fire', GameConfig.assets.laserSound);
     this.load.audio('player_hit', GameConfig.assets.hitSound);
+    this.load.audio('boost_fire', GameConfig.assets.boostSound);
 
     // Level menu
     this.load.image('menuIn', GameConfig.assets.menuIn);
@@ -237,8 +238,16 @@ class GameScene extends Phaser.Scene {
 
     const now = Date.now();
     const input = inputManager.getCurrentInput();
-    if (input.boost && now >= this._boostCooldownUntil) {
+    const localStats = gameState.getLocalPlayerStats();
+    const localShip = this.entityManager?.getLocalShip?.();
+    const canBoost = input.boost &&
+      !!localShip &&
+      now >= this._boostCooldownUntil &&
+      (localStats.hp ?? 1) > 0;
+
+    if (canBoost) {
       this._boostCooldownUntil = now + this._boostCooldownMs;
+      this._playBoostSound();
     }
 
     if (this.entityManager) {
@@ -539,6 +548,23 @@ class GameScene extends Phaser.Scene {
     try {
       this.sound.play('player_hit', {
         volume: Phaser.Math.Clamp(0.45 + severity * 0.25, 0.45, 0.7)
+      });
+    } catch (error) {
+      // Audio playback can be blocked until the browser unlocks the sound context.
+    }
+  }
+
+  /**
+   * Play the local boost ignition sound.
+   *
+   * @private
+   */
+  _playBoostSound() {
+    if (!this.sound || !this.cache.audio.exists('boost_fire')) return;
+
+    try {
+      this.sound.play('boost_fire', {
+        volume: 0.55
       });
     } catch (error) {
       // Audio playback can be blocked until the browser unlocks the sound context.

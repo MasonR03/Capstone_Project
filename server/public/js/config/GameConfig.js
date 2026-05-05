@@ -153,6 +153,7 @@ const GameConfig = {
     bullet: 'assets/bullet_defult.png',
     laserSound: 'assets/laser.m4a',
     hitSound: 'assets/hit.mp3',
+    boostSound: 'assets/boost.mp3',
 
     menuIn: 'assets/MenuSliderIn.png',
     menuOut: 'assets/MenuSliderOut.png',
