@@ -533,25 +533,30 @@ class LevelPanel {
    * Gain XP for the active ship and level it up if needed.
    *
    * @param {number} amount
+   * @returns {number} Number of upgrade points gained.
    */
   gainXp(amount = 0) {
-    if (amount <= 0) return;
+    if (amount <= 0) return 0;
 
     const shipKey = this._getActiveShipKey();
     const shipProg = this.progress.shipProgress[shipKey];
-    if (!shipProg) return;
+    if (!shipProg) return 0;
 
     shipProg.xp += amount;
+    let upgradePointsGained = 0;
 
     while (shipProg.xp >= shipProg.maxXp) {
       shipProg.xp -= shipProg.maxXp;
       shipProg.level += 1;
       shipProg.unspentStatPoints += 1;
+      upgradePointsGained += 1;
       shipProg.maxXp = getXpRequiredForLevel(shipProg.level);
     }
 
     this._rebuildContents();
     this._emitChange();
+
+    return upgradePointsGained;
   }
 
   /**

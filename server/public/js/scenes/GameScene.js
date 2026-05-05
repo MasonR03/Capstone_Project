@@ -543,8 +543,10 @@ class GameScene extends Phaser.Scene {
   _grantCollectedStarRewards(xpValue, pointValue) {
     if (!uiManager.levelPanel) return;
 
+    let upgradePointsGained = 0;
+
     if (uiManager.levelPanel.gainXp) {
-      uiManager.levelPanel.gainXp(xpValue);
+      upgradePointsGained = uiManager.levelPanel.gainXp(xpValue) || 0;
     }
 
     if (uiManager.levelPanel.addPoint) {
@@ -553,6 +555,10 @@ class GameScene extends Phaser.Scene {
 
     this.playerProgress = uiManager.getPlayerProgress();
     gameState.setPlayerProgress(this.playerProgress);
+
+    if (upgradePointsGained > 0) {
+      this._spawnUpgradePointPopup(upgradePointsGained);
+    }
   }
 
   /**
@@ -572,6 +578,85 @@ class GameScene extends Phaser.Scene {
 
     this.time.delayedCall(450, () => {
       if (particles) particles.destroy();
+    });
+  }
+
+  /**
+   * Get a good popup position above the local player.
+   *
+   * @returns {{x:number,y:number}}
+   * @private
+   */
+  _getLocalPlayerPopupPosition() {
+    const localShip = this.entityManager?.getLocalShip?.();
+    const sprite = localShip?.sprite;
+
+    if (sprite && sprite.active) {
+      return {
+        x: sprite.x,
+        y: sprite.y - 54
+      };
+    }
+
+    const position = localShip?.getPosition?.();
+    const fallbackX =
+      position?.x ??
+      localShip?.predicted?.x ??
+      localShip?.x ??
+      localShip?.serverState?.x;
+    const fallbackY =
+      position?.y ??
+      localShip?.predicted?.y ??
+      localShip?.y ??
+      localShip?.serverState?.y;
+
+    if (Number.isFinite(fallbackX) && Number.isFinite(fallbackY)) {
+      return {
+        x: fallbackX,
+        y: fallbackY - 54
+      };
+    }
+
+    const view = this.cameras?.main?.worldView;
+    return {
+      x: view ? view.centerX : GameConfig.world.width / 2,
+      y: view ? view.centerY : GameConfig.world.height / 2
+    };
+  }
+
+  /**
+   * Show upgrade-point feedback over the local player.
+   *
+   * @param {number} amount
+   * @private
+   */
+  _spawnUpgradePointPopup(amount = 1) {
+    const points = Math.max(1, Math.floor(Number(amount) || 1));
+    const position = this._getLocalPlayerPopupPosition();
+    const label = points === 1
+      ? '+1 UPGRADE POINT'
+      : `+${points} UPGRADE POINTS`;
+
+    const text = this.add.text(position.x, position.y, label, {
+      font: '14px Orbitron, sans-serif',
+      fill: '#66ffcc',
+      align: 'center',
+      stroke: '#001014',
+      strokeThickness: 4
+    });
+
+    text.setOrigin(0.5, 0.5);
+    text.setDepth(6);
+    text.setScale(0.88);
+
+    this.tweens.add({
+      targets: text,
+      y: position.y - 42,
+      alpha: { from: 1, to: 0 },
+      scale: { from: 0.88, to: 1.18 },
+      duration: 1050,
+      ease: 'Cubic.easeOut',
+      onComplete: () => text.destroy()
     });
   }
 
