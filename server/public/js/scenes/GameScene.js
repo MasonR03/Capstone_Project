@@ -560,7 +560,13 @@ class GameScene extends Phaser.Scene {
 
     if (upgradePointsGained > 0) {
       this._spawnUpgradePointPopup(upgradePointsGained);
-      networkManager.emitPlayerLevelUp(upgradePointsGained);
+      const activeShipKey =
+        this.playerProgress.selectedShip ||
+        gameState.getChosenClassKey() ||
+        GameConfig.defaultClass;
+      const activeLevel = this.playerProgress.shipProgress?.[activeShipKey]?.level;
+
+      networkManager.emitPlayerLevelUp(upgradePointsGained, activeLevel);
     }
   }
 
@@ -1157,6 +1163,11 @@ class GameScene extends Phaser.Scene {
 
     socket.on('playerLeveledUp', (data) => {
       this._showLevelUpFeedEntry(data);
+
+      const leveledShip = this.entityManager?.getShip?.(data?.playerId);
+      if (leveledShip && Number.isFinite(Number(data?.shipLevel)) && leveledShip.setShipLevel) {
+        leveledShip.setShipLevel(data.shipLevel);
+      }
 
       if (this.entityManager?.isLocalPlayer?.(data?.playerId)) {
         this._playLevelUpSound();

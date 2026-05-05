@@ -205,10 +205,18 @@ class NetworkManager {
    * Notify the server that the local player gained upgrade points.
    *
    * @param {number} pointsGained
+   * @param {number|null} level
    */
-  emitPlayerLevelUp(pointsGained = 1) {
+  emitPlayerLevelUp(pointsGained = 1, level = null) {
     const safePoints = Math.max(1, Math.floor(Number(pointsGained) || 1));
-    this.emit('playerLevelUp', { pointsGained: safePoints });
+    const safeLevel = Number.isFinite(Number(level))
+      ? Math.max(1, Math.floor(Number(level)))
+      : null;
+
+    this.emit('playerLevelUp', {
+      pointsGained: safePoints,
+      level: safeLevel
+    });
   }
 
   /**

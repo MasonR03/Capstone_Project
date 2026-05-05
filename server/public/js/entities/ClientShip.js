@@ -19,6 +19,9 @@ class ClientShip {
     this.id = id;
     this.socketId = serverState.playerId || id;
     this.playerName = serverState.playerName || null;
+    this.shipLevel = Number.isFinite(Number(serverState.shipLevel))
+      ? Math.max(1, Math.floor(Number(serverState.shipLevel)))
+      : 1;
     this.team = serverState.team || 'neutral';
 
     // Position and physics state
@@ -78,6 +81,7 @@ class ClientShip {
     // Create visual elements
     this.sprite = null;
     this.nameText = null;
+    this.levelText = null;
     this.trailParticles = null;
     this.trailEmitter = null;
     this._createSprite(serverState);
@@ -120,7 +124,7 @@ class ClientShip {
     // Create trailing glow particles
     this._createTrail();
 
-    // Create name label
+    // Create name label and level tag
     const displayName = this.playerName || this.id.substring(0, 8);
     this.nameText = scene.add.text(this.x, this.y - GameConfig.sprites.nameOffset, displayName, {
       font: '16px Orbitron, sans-serif',
@@ -132,7 +136,66 @@ class ClientShip {
     this.nameText.setOrigin(0.5, 0.5);
     this.nameText.setDepth(2);
 
+    this.levelText = scene.add.text(this.x, this.y - GameConfig.sprites.nameOffset, '', {
+      font: '14px Orbitron, sans-serif',
+      fill: '#a8ff9a',
+      align: 'center',
+      stroke: '#000000',
+      strokeThickness: 2
+    });
+    this.levelText.setOrigin(0.5, 0.5);
+    this.levelText.setDepth(2);
+    this._refreshNameTag();
+
     console.log('Created sprite for player:', displayName, 'at', this.x, this.y);
+  }
+
+  /**
+   * Refresh name and level text.
+   *
+   * @private
+   */
+  _refreshNameTag() {
+    if (this.nameText) {
+      this.nameText.setText(this.getDisplayName());
+    }
+
+    if (this.levelText) {
+      this.levelText.setText(`Lv ${this.shipLevel}`);
+    }
+
+    const pose = this._getVisualPose();
+    if (pose) {
+      this._layoutNameTag(pose.x, pose.y);
+    }
+  }
+
+  /**
+   * Position the split name and level labels around a shared center.
+   *
+   * @param {number} x
+   * @param {number} y
+   * @private
+   */
+  _layoutNameTag(x, y) {
+    if (!this.nameText && !this.levelText) return;
+
+    const labelY = y - GameConfig.sprites.nameOffset;
+    const spacing = 5;
+    const nameWidth = this.nameText?.width || 0;
+    const levelWidth = this.levelText?.width || 0;
+    const totalWidth = nameWidth + spacing + levelWidth;
+    const left = x - (totalWidth / 2);
+
+    if (this.nameText) {
+      this.nameText.x = left + (nameWidth / 2);
+      this.nameText.y = labelY;
+    }
+
+    if (this.levelText) {
+      this.levelText.x = left + nameWidth + spacing + (levelWidth / 2);
+      this.levelText.y = labelY;
+    }
   }
 
   /**
@@ -225,9 +288,12 @@ class ClientShip {
     // Update player name if changed
     if (serverState.playerName && serverState.playerName !== this.playerName) {
       this.playerName = serverState.playerName;
-      if (this.nameText) {
-        this.nameText.setText(this.playerName);
-      }
+      this._refreshNameTag();
+    }
+
+    const nextLevel = Number(serverState.shipLevel);
+    if (Number.isFinite(nextLevel) && Math.floor(nextLevel) !== this.shipLevel) {
+      this.setShipLevel(nextLevel);
     }
 
     // Ensure sprite is visible
@@ -269,6 +335,14 @@ class ClientShip {
     if (this.sprite) {
       this.sprite.destroy();
       this.sprite = null;
+    }
+    if (this.nameText) {
+      this.nameText.destroy();
+      this.nameText = null;
+    }
+    if (this.levelText) {
+      this.levelText.destroy();
+      this.levelText = null;
     }
 
     this._createSprite({});
@@ -542,8 +616,7 @@ class ClientShip {
       this.sprite.rotation = rotation;
     }
     if (this.nameText) {
-      this.nameText.x = x;
-      this.nameText.y = y - GameConfig.sprites.nameOffset;
+      this._layoutNameTag(x, y);
     }
 
     this._updateBoostThruster(x, y, rotation);
@@ -572,6 +645,19 @@ class ClientShip {
    */
   getDisplayName() {
     return this.playerName || this.id.substring(0, 8);
+  }
+
+  /**
+   * Update the displayed ship level.
+   *
+   * @param {number} level
+   */
+  setShipLevel(level) {
+    const nextLevel = Number(level);
+    if (!Number.isFinite(nextLevel)) return;
+
+    this.shipLevel = Math.max(1, Math.floor(nextLevel));
+    this._refreshNameTag();
   }
 
   /**
@@ -612,6 +698,10 @@ class ClientShip {
     if (this.nameText) {
       this.nameText.destroy();
       this.nameText = null;
+    }
+    if (this.levelText) {
+      this.levelText.destroy();
+      this.levelText = null;
     }
   }
 }

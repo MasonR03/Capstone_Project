@@ -28,6 +28,7 @@ class DefaultShip extends Ship {
     // Player-specific properties
     this.socketId = socketId;
     this.playerName = config.playerName || null;
+    this.shipLevel = Number.isFinite(config.shipLevel) ? Math.max(1, Math.floor(config.shipLevel)) : 1;
     this.lastInputSeq = 0; // Track last processed input sequence for reconciliation
   }
 
@@ -88,6 +89,7 @@ class DefaultShip extends Ship {
     return {
       ...base,
       playerName: this.playerName,
+      shipLevel: this.shipLevel,
       lastInputSeq: this.lastInputSeq,
       input: { ...this.input }
     };

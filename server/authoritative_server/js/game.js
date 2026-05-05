@@ -63,6 +63,13 @@ function getResolvedShipStats(classKey, progress = {}) {
   };
 }
 
+function getShipLevel(classKey, progress = {}) {
+  const safeKey = SHIP_CLASSES[classKey] ? classKey : DEFAULT_CLASS;
+  const level = Number(progress?.shipProgress?.[safeKey]?.level);
+
+  return Number.isFinite(level) ? Math.max(1, Math.floor(level)) : 1;
+}
+
 function clampHpToMax(hp, maxHp) {
   const safeMaxHp = Number.isFinite(maxHp) ? Math.max(0, maxHp) : 0;
   const safeHp = Number.isFinite(hp) ? hp : safeMaxHp;
@@ -220,6 +227,7 @@ function initializeServer(io) {
     const ship = entityManager.createShip(socket.id, startX, startY, {
       team: 'neutral',
       classKey: DEFAULT_CLASS,
+      shipLevel: getShipLevel(DEFAULT_CLASS, initialProgress),
       maxSpeed: classConfig.speed,
       acceleration: classConfig.accel,
       maxHp: classConfig.maxHp,
@@ -313,6 +321,7 @@ function initializeServer(io) {
       const cfg = getResolvedShipStats(safeKey, progress);
 
       ship.classKey = safeKey;
+      ship.shipLevel = getShipLevel(safeKey, progress);
       ship.stats.maxSpeed = cfg.speed;
       ship.stats.acceleration = cfg.accel;
       ship.maxHp = cfg.maxHp;
@@ -386,11 +395,21 @@ function initializeServer(io) {
       if (!ship || ship.hp <= 0) return;
 
       const pointsGained = Math.max(1, Math.floor(Number(payload.pointsGained) || 1));
+      const reportedLevel = Number(payload.level);
+      const currentLevel = Number.isFinite(ship.shipLevel) ? ship.shipLevel : 1;
+      const nextLevel = Number.isFinite(reportedLevel)
+        ? Math.max(1, Math.floor(reportedLevel))
+        : currentLevel + pointsGained;
+
+      if (nextLevel <= currentLevel) return;
+
+      ship.shipLevel = nextLevel;
       ship.hp = ship.maxHp;
 
       io.emit('playerLeveledUp', {
         playerId: socket.id,
         playerName: ship.getDisplayName(),
+        shipLevel: ship.shipLevel,
         pointsGained,
         hp: ship.hp,
         maxHp: ship.maxHp
