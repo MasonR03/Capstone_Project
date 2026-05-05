@@ -192,6 +192,13 @@ class NetworkManager {
   }
 
   /**
+   * Request the current authoritative asteroid list.
+   */
+  emitRequestAsteroids() {
+    this.emit('requestAsteroids');
+  }
+
+  /**
    * Request collection of an authoritative collectible star.
    *
    * @param {string} starId

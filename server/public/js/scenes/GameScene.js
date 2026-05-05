@@ -13,6 +13,7 @@ import uiManager from '../managers/UIManager.js';
 import ClientEntityManager from '../managers/ClientEntityManager.js';
 import ShootingStarRenderer from '../managers/ShootingStarRenderer.js';
 import BulletRenderer from '../managers/BulletRenderer.js';
+import AsteroidRenderer from '../managers/AsteroidRenderer.js';
 import {
   PLAYER_PROGRESS_DEFAULTS,
   cloneProgress
@@ -25,6 +26,7 @@ class GameScene extends Phaser.Scene {
     // Managers
     this.entityManager = null;
     this.bulletRenderer = null;
+    this.asteroidRenderer = null;
 
     // Client state
     this._lastShootTime = 0;
@@ -101,6 +103,7 @@ class GameScene extends Phaser.Scene {
     // Backdrop
     this.load.image('backdrop', GameConfig.assets.backdrop);
     this.load.image('collectible_star', GameConfig.assets.collectibleStar);
+    this.load.image('asteroid', GameConfig.assets.asteroid);
 
     // Bullet
     this.load.image('bullet', GameConfig.assets.bullet);
@@ -108,6 +111,7 @@ class GameScene extends Phaser.Scene {
     this.load.audio('player_hit', GameConfig.assets.hitSound);
     this.load.audio('low_hp', GameConfig.assets.lowHpSound);
     this.load.audio('boost_fire', GameConfig.assets.boostSound);
+    this.load.audio('asteroid_boom', GameConfig.assets.asteroidBoom);
     this.load.audio('weapon_hit', GameConfig.assets.weaponHitSound);
     this.load.audio('level_up', GameConfig.assets.levelUpSound);
     this.load.audio('star_collect', GameConfig.assets.starCollectSound);
@@ -154,6 +158,9 @@ class GameScene extends Phaser.Scene {
 
     this.bulletRenderer = new BulletRenderer(this, networkManager.getSocket());
     this.bulletRenderer.init();
+
+    this.asteroidRenderer = new AsteroidRenderer(this, networkManager.getSocket());
+    this.asteroidRenderer.init();
 
     // Borders
     this._addWorldBorders();
@@ -1237,7 +1244,7 @@ class GameScene extends Phaser.Scene {
     } else {
       entry.className = 'kill-feed-entry environment';
       addPart('victim', victimName);
-      addPart('verb', ' hit a wall');
+      addPart('verb', data.cause === 'asteroid' ? ' was crushed by an asteroid' : ' hit a wall');
     }
 
     feed.prepend(entry);
@@ -1287,6 +1294,46 @@ class GameScene extends Phaser.Scene {
         ? '(+1 upgrade point)'
         : `(+${pointsGained} upgrade points)`
     );
+
+    feed.prepend(entry);
+
+    while (feed.children.length > 5) {
+      feed.lastElementChild.remove();
+    }
+
+    window.setTimeout(() => {
+      entry.remove();
+    }, 5400);
+  }
+
+  /**
+   * Show asteroid destruction in the viewport-pinned kill feed.
+   *
+   * @param {Object} data
+   * @private
+   */
+  _showAsteroidDestroyedFeedEntry(data) {
+    const feed = typeof document !== 'undefined'
+      ? document.getElementById('kill-feed')
+      : null;
+
+    if (!feed || !data?.ownerId) return;
+
+    const entry = document.createElement('div');
+    const playerName = this._getKillFeedName(data.ownerId);
+    const xpValue = Math.max(0, Math.floor(Number(data.xpValue) || GameConfig.asteroids.xpValue || 200));
+
+    const addPart = (className, text) => {
+      const span = document.createElement('span');
+      if (className) span.className = className;
+      span.textContent = text;
+      entry.appendChild(span);
+    };
+
+    entry.className = 'kill-feed-entry environment';
+    addPart('killer', playerName);
+    addPart('verb', ' destroyed an asteroid ');
+    addPart('level-points', `(+${xpValue} XP)`);
 
     feed.prepend(entry);
 
@@ -1399,6 +1446,14 @@ class GameScene extends Phaser.Scene {
       }
     });
 
+    socket.on('asteroidDestroyed', (data) => {
+      this._showAsteroidDestroyedFeedEntry(data);
+
+      if (this.entityManager?.isLocalPlayer?.(data?.ownerId)) {
+        this._grantXpReward(data?.xpValue || GameConfig.asteroids.xpValue || 200);
+      }
+    });
+
     socket.on('playerKilled', (data) => {
       this._showKillFeedEntry(data);
 
@@ -1438,6 +1493,7 @@ class GameScene extends Phaser.Scene {
           this._setLowHpWarningState(data.hp);
           this._boostCooldownUntil = 0;
           networkManager.emitRequestCollectibleStars();
+          networkManager.emitRequestAsteroids();
         }
       }
     });
@@ -1477,6 +1533,7 @@ class GameScene extends Phaser.Scene {
 
     if (networkManager.isConnected()) {
       networkManager.emitRequestCollectibleStars();
+      networkManager.emitRequestAsteroids();
     }
   }
 
