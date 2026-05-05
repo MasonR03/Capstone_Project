@@ -30,6 +30,11 @@ class GameScene extends Phaser.Scene {
     this._lastShootTime = 0;
     this._lastClassLog = 0;
     this._cameraFollowSet = false;
+    this._lastLocalHp = null;
+    this._lastLocalMaxHp = null;
+    this._damageCueTimer = null;
+    this._damageTintTimer = null;
+    this._shipHitTintTimers = new Map();
 
     // Progress
     this.playerProgress = cloneProgress(PLAYER_PROGRESS_DEFAULTS);
@@ -91,6 +96,7 @@ class GameScene extends Phaser.Scene {
     // Bullet
     this.load.image('bullet', GameConfig.assets.bullet);
     this.load.audio('laser_fire', GameConfig.assets.laserSound);
+    this.load.audio('player_hit', GameConfig.assets.hitSound);
 
     // Level menu
     this.load.image('menuIn', GameConfig.assets.menuIn);
@@ -414,6 +420,201 @@ class GameScene extends Phaser.Scene {
   }
 
   /**
+   * Track authoritative local HP and play feedback when it drops.
+   *
+   * @param {Object} serverState
+   * @private
+   */
+  _trackLocalDamage(serverState) {
+    const nextHp = Number(serverState.hp);
+    const nextMaxHp = Number(serverState.maxHp);
+    const prevHp = this._lastLocalHp;
+    const prevMaxHp = this._lastLocalMaxHp;
+    const hasHp = Number.isFinite(nextHp);
+    const hasMaxHp = Number.isFinite(nextMaxHp);
+
+    if (hasHp) {
+      const hasPreviousHp = Number.isFinite(prevHp);
+      const maxHpChanged = Number.isFinite(prevMaxHp) && hasMaxHp && prevMaxHp !== nextMaxHp;
+      const damageAmount = prevHp - nextHp;
+
+      if (hasPreviousHp && !maxHpChanged && damageAmount > 0) {
+        this._playDamageCue(damageAmount, hasMaxHp ? nextMaxHp : prevMaxHp);
+      }
+
+      this._lastLocalHp = nextHp;
+    }
+
+    if (hasMaxHp) {
+      this._lastLocalMaxHp = nextMaxHp;
+    }
+  }
+
+  /**
+   * Play local damage feedback.
+   *
+   * @param {number} damageAmount
+   * @param {number} maxHp
+   * @private
+   */
+  _playDamageCue(damageAmount, maxHp) {
+    const safeMaxHp = Number.isFinite(maxHp) && maxHp > 0 ? maxHp : 100;
+    const relativeDamage = Math.max(0, damageAmount / safeMaxHp);
+    const severity = Phaser.Math.Clamp(0.55 + relativeDamage * 3, 0.65, 1);
+    const shakeIntensity = Phaser.Math.Clamp(0.004 + relativeDamage * 0.02, 0.005, 0.018);
+
+    const vignette = typeof document !== 'undefined'
+      ? document.getElementById('damage-vignette')
+      : null;
+
+    if (vignette) {
+      vignette.style.setProperty('--damage-cue-strength', severity.toFixed(2));
+      vignette.classList.remove('active');
+      void vignette.offsetWidth;
+      vignette.classList.add('active');
+
+      if (this._damageCueTimer) {
+        window.clearTimeout(this._damageCueTimer);
+      }
+
+      this._damageCueTimer = window.setTimeout(() => {
+        vignette.classList.remove('active');
+        this._damageCueTimer = null;
+      }, 430);
+    }
+
+    if (this.cameras?.main?.shake) {
+      this.cameras.main.shake(140, shakeIntensity, true);
+    }
+
+    this._playHitSound(severity);
+    this._flashLocalShip();
+  }
+
+  /**
+   * Play the local damage sound.
+   *
+   * @param {number} severity
+   * @private
+   */
+  _playHitSound(severity = 1) {
+    if (!this.sound || !this.cache.audio.exists('player_hit')) return;
+
+    try {
+      this.sound.play('player_hit', {
+        volume: Phaser.Math.Clamp(0.45 + severity * 0.25, 0.45, 0.7)
+      });
+    } catch (error) {
+      // Audio playback can be blocked until the browser unlocks the sound context.
+    }
+  }
+
+  /**
+   * Briefly tint the local ship red without changing its death/respawn alpha.
+   *
+   * @private
+   */
+  _flashLocalShip() {
+    const localShip = this.entityManager?.getLocalShip?.();
+    const sprite = localShip?.sprite;
+    if (!sprite || !sprite.active) return;
+
+    sprite.setTint(0xff6666);
+
+    if (this._damageTintTimer) {
+      this._damageTintTimer.remove(false);
+    }
+
+    this._damageTintTimer = this.time.delayedCall(160, () => {
+      if (sprite.active && sprite.clearTint) {
+        sprite.clearTint();
+      }
+      this._damageTintTimer = null;
+    });
+  }
+
+  /**
+   * Play visible feedback on a ship that took bullet damage.
+   *
+   * @param {Object} data
+   * @private
+   */
+  _playShipHitCue(data) {
+    const shipId = data?.shipId;
+    if (!shipId || !this.entityManager) return;
+    if (this.entityManager.isLocalPlayer(shipId)) return;
+
+    const ship = this.entityManager.getShip(shipId);
+    const sprite = ship?.sprite;
+    if (!ship || !sprite || !sprite.active) return;
+
+    this._flashHitShip(shipId, sprite);
+    this._spawnDamageNumber(ship, data.damage, data.killed);
+  }
+
+  /**
+   * Briefly tint a remote ship so attackers can confirm the hit.
+   *
+   * @param {string} shipId
+   * @param {*} sprite
+   * @private
+   */
+  _flashHitShip(shipId, sprite) {
+    sprite.setTint(0xff4f4f);
+
+    const existingTimer = this._shipHitTintTimers.get(shipId);
+    if (existingTimer) {
+      existingTimer.remove(false);
+    }
+
+    const timer = this.time.delayedCall(140, () => {
+      if (sprite.active && sprite.clearTint) {
+        sprite.clearTint();
+      }
+      this._shipHitTintTimers.delete(shipId);
+    });
+
+    this._shipHitTintTimers.set(shipId, timer);
+  }
+
+  /**
+   * Float damage text above a hit ship.
+   *
+   * @param {*} ship
+   * @param {number} damage
+   * @param {boolean} killed
+   * @private
+   */
+  _spawnDamageNumber(ship, damage, killed) {
+    const sprite = ship.sprite;
+    const x = sprite?.x ?? ship.x ?? 0;
+    const y = (sprite?.y ?? ship.y ?? 0) - 34;
+    const amount = Math.max(0, Math.floor(Number(damage) || 0));
+    const label = killed ? 'DESTROYED' : `-${amount}`;
+
+    const text = this.add.text(x, y, label, {
+      font: killed ? '13px Orbitron, sans-serif' : '18px Orbitron, sans-serif',
+      fill: killed ? '#ffdd66' : '#ff6666',
+      align: 'center',
+      stroke: '#000000',
+      strokeThickness: 3
+    });
+
+    text.setOrigin(0.5, 0.5);
+    text.setDepth(4);
+
+    this.tweens.add({
+      targets: text,
+      y: y - 30,
+      alpha: { from: 1, to: 0 },
+      scale: { from: killed ? 1.05 : 1, to: killed ? 1.3 : 1.18 },
+      duration: killed ? 760 : 520,
+      ease: 'Cubic.easeOut',
+      onComplete: () => text.destroy()
+    });
+  }
+
+  /**
    * Set up socket handlers.
    *
    * @private
@@ -435,6 +636,12 @@ class GameScene extends Phaser.Scene {
         this.entityManager.addOrUpdateShip(players[id]);
       });
 
+      const localState = socketId ? players[socketId] : null;
+      if (localState) {
+        this._lastLocalHp = localState.hp;
+        this._lastLocalMaxHp = localState.maxHp;
+      }
+
       this._ensureCameraFollow();
     });
 
@@ -444,6 +651,10 @@ class GameScene extends Phaser.Scene {
 
     socket.on('playerDisconnected', (playerId) => {
       this.entityManager.removeShip(playerId);
+    });
+
+    socket.on('bulletHit', (data) => {
+      this._playShipHitCue(data);
     });
 
     socket.on('playerKilled', (data) => {
@@ -470,6 +681,8 @@ class GameScene extends Phaser.Scene {
           ship.predicted.y = data.y;
           ship.predicted.vx = 0;
           ship.predicted.vy = 0;
+          this._lastLocalHp = data.hp;
+          this._lastLocalMaxHp = data.maxHp;
         }
       }
     });
@@ -484,6 +697,8 @@ class GameScene extends Phaser.Scene {
 
       this.entityManager.processServerUpdate(serverPlayers, {
         onLocalPlayerUpdate: (serverState) => {
+          this._trackLocalDamage(serverState);
+
           gameState.updateLocalPlayerStats({
             hp: serverState.hp,
             maxHp: serverState.maxHp,

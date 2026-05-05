@@ -29,7 +29,9 @@ class BulletRenderer {
 
     this._socket.on('bulletFired', (data) => {
       this._createBullet(data);
-      this._playFireSound();
+      if (this._isLocalOwner(data.ownerId)) {
+        this._playFireSound();
+      }
     });
 
     this._socket.on('bulletUpdates', (bullets) => {
@@ -111,6 +113,11 @@ class BulletRenderer {
       return classKey;
     }
     return '_default';
+  }
+
+  _isLocalOwner(ownerId) {
+    if (!ownerId || !this._scene.entityManager) return false;
+    return this._scene.entityManager.isLocalPlayer(ownerId);
   }
 
   _resolveColor(colorKey) {
