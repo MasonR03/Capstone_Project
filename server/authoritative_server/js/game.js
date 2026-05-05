@@ -475,6 +475,7 @@ function updateGame(io, frameCount, delta) {
   bulletResult.destroyed.forEach((hit) => {
     io.emit('bulletHit', {
       bulletId: hit.bulletId,
+      ownerId: hit.ownerId,
       shipId: hit.shipId,
       damage: hit.damage,
       killed: hit.killed

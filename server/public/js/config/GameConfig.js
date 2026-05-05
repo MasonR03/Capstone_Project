@@ -154,6 +154,7 @@ const GameConfig = {
     laserSound: 'assets/laser.m4a',
     hitSound: 'assets/hit.mp3',
     boostSound: 'assets/boost.mp3',
+    weaponHitSound: 'assets/weaponhit.m4a',
 
     menuIn: 'assets/MenuSliderIn.png',
     menuOut: 'assets/MenuSliderOut.png',

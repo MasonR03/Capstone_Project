@@ -100,6 +100,7 @@ class GameScene extends Phaser.Scene {
     this.load.audio('laser_fire', GameConfig.assets.laserSound);
     this.load.audio('player_hit', GameConfig.assets.hitSound);
     this.load.audio('boost_fire', GameConfig.assets.boostSound);
+    this.load.audio('weapon_hit', GameConfig.assets.weaponHitSound);
 
     // Level menu
     this.load.image('menuIn', GameConfig.assets.menuIn);
@@ -615,6 +616,26 @@ class GameScene extends Phaser.Scene {
   }
 
   /**
+   * Play hit confirmation audio for the attacking player.
+   *
+   * @param {Object} data
+   * @private
+   */
+  _playWeaponHitSound(data) {
+    const ownerId = data?.ownerId;
+    if (!ownerId || !this.entityManager?.isLocalPlayer?.(ownerId)) return;
+    if (!this.sound || !this.cache.audio.exists('weapon_hit')) return;
+
+    try {
+      this.sound.play('weapon_hit', {
+        volume: 0.5
+      });
+    } catch (error) {
+      // Audio playback can be blocked until the browser unlocks the sound context.
+    }
+  }
+
+  /**
    * Briefly tint a remote ship so attackers can confirm the hit.
    *
    * @param {string} shipId
@@ -718,6 +739,7 @@ class GameScene extends Phaser.Scene {
 
     socket.on('bulletHit', (data) => {
       this._playShipHitCue(data);
+      this._playWeaponHitSound(data);
     });
 
     socket.on('playerKilled', (data) => {
