@@ -1351,6 +1351,28 @@ class GameScene extends Phaser.Scene {
   }
 
   /**
+   * Show a temporary top-screen kill streak banner.
+   *
+   * @param {Object} data
+   * @private
+   */
+  _showKillStreakBanner(data) {
+    const overlay = typeof document !== 'undefined'
+      ? document.getElementById('title-overlay')
+      : null;
+
+    if (!overlay) return;
+
+    const message = typeof data?.message === 'string' ? data.message.trim() : '';
+    if (!message) return;
+
+    overlay.textContent = message.toUpperCase();
+    overlay.classList.remove('active');
+    void overlay.offsetWidth;
+    overlay.classList.add('active');
+  }
+
+  /**
    * Set up socket handlers.
    *
    * @private
@@ -1448,6 +1470,10 @@ class GameScene extends Phaser.Scene {
           uiManager.updateHpXp(gameState.getLocalPlayerStats());
         }
       }
+    });
+
+    socket.on('killStreak', (data) => {
+      this._showKillStreakBanner(data);
     });
 
     socket.on('asteroidDestroyed', (data) => {

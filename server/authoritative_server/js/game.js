@@ -120,6 +120,7 @@ const RESPAWN_DELAY = 3000;
 
 // Game state
 const gameState = {};
+const killStreaks = new Map();
 
 // Physics world
 let physics = null;
@@ -135,6 +136,7 @@ function removeStalePlayers(io) {
 
   staleIds.forEach((playerId) => {
     console.warn('🧹 Removing stale player without active socket:', playerId);
+    killStreaks.delete(playerId);
     io.emit('playerDisconnected', playerId);
   });
 }
@@ -459,6 +461,7 @@ function initializeServer(io) {
 
       // Clean up bullets belonging to this player
       bulletManager.removeByOwner(socket.id);
+      killStreaks.delete(socket.id);
 
       // Clean up the player (EntityManager handles physics body cleanup)
       if (entityManager.removeShip(socket.id)) {
@@ -545,6 +548,27 @@ function handleShipKilled(io, victimId, killerId, cause = null) {
   if (!deadShip) return;
 
   console.log('💀 Ship destroyed:', victimId, 'by', killerId || '(environment)');
+
+  killStreaks.set(victimId, 0);
+
+  if (killerId && killerId !== victimId) {
+    const streak = (killStreaks.get(killerId) || 0) + 1;
+    killStreaks.set(killerId, streak);
+
+    if (streak >= 3) {
+      const killerShip = entityManager.getShip(killerId);
+      const playerName = killerShip?.getDisplayName?.() || `Pilot ${String(killerId).slice(0, 6)}`;
+      const label = streak >= 5 ? 'IS DOMINATING' : 'IS A THREAT';
+
+      io.emit('killStreak', {
+        playerId: killerId,
+        playerName,
+        streak,
+        message: `${playerName} ${label}`
+      });
+    }
+  }
+
   io.emit('playerKilled', { victimId, killerId, cause });
 
   setTimeout(() => {
