@@ -21,6 +21,31 @@
         height: 100vh;
         image-rendering: pixelated;
       }
+      #damage-vignette {
+        position: fixed;
+        inset: 0;
+        z-index: 1100;
+        pointer-events: none;
+        opacity: 0;
+        mix-blend-mode: screen;
+        background:
+          radial-gradient(
+            ellipse at center,
+            rgba(255, 0, 0, 0) 46%,
+            rgba(255, 36, 36, 0.2) 72%,
+            rgba(255, 0, 0, 0.52) 100%
+          ),
+          rgba(255, 0, 0, 0.04);
+        will-change: opacity;
+      }
+      #damage-vignette.active {
+        animation: damage-vignette-pulse 420ms ease-out;
+      }
+      @keyframes damage-vignette-pulse {
+        0% { opacity: 0; }
+        16% { opacity: var(--damage-cue-strength, 1); }
+        100% { opacity: 0; }
+      }
       /* ---- Top Toolbar (StarCraft-style) ---- */
       #top-toolbar {
         position: fixed;
@@ -547,6 +572,7 @@
 
   <body>
     <audio id="main-theme" src="assets/main_theme.mp3" loop preload="auto"></audio>
+    <div id="damage-vignette" aria-hidden="true"></div>
 
     <!-- Login Overlay -->
     <div id="login-overlay">
