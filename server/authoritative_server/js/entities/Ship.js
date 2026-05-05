@@ -20,8 +20,8 @@ class Ship {
       maxSpeed: config.maxSpeed || 400,
       acceleration: config.acceleration || 200,
       angularSpeed: config.angularSpeed || (420 * (Math.PI / 180)), // 7.33 rad/s
-      dragFactor: config.dragFactor || 0.98,
-      gripFactor: config.gripFactor || 0.2, // lateral velocity dampening per frame (0=spaceship, higher=car-like)
+      dragFactor: config.dragFactor || 0.988,
+      gripFactor: config.gripFactor || 0.1, // lateral velocity dampening per frame (0=spaceship, higher=car-like)
     };
 
     // Combat/progression stats
@@ -47,6 +47,15 @@ class Ship {
     this.lastCollisionDamageAt = 0;
     this._atBarrier = false;
     this.barrierHitThisFrame = false;
+
+    // Boost state
+    this.boostCooldownMs = config.boostCooldownMs || 3000;
+    this.boostImpulse = config.boostImpulse || 360;
+    this.boostDurationMs = config.boostDurationMs || 450;
+    this.boostMaxSpeedMultiplier = config.boostMaxSpeedMultiplier || 1.65;
+    this.lastBoostAt = config.lastBoostAt || 0;
+    this.boostActiveUntil = 0;
+    this.boostQueued = false;
   }
 
   /**
@@ -63,6 +72,28 @@ class Ship {
     return this.body;
   }
 
+  getBoostMaxSpeed() {
+    return this.stats.maxSpeed * this.boostMaxSpeedMultiplier;
+  }
+
+  getBoostCooldownRemaining(now = Date.now()) {
+    return Math.max(0, this.boostCooldownMs - (now - this.lastBoostAt));
+  }
+
+  syncBoostVelocityCap(now = Date.now()) {
+    if (!this.body) return;
+
+    const maxVelocity = now < this.boostActiveUntil
+      ? this.getBoostMaxSpeed()
+      : this.stats.maxSpeed;
+
+    this.body.setMaxVelocity(maxVelocity);
+  }
+
+  queueBoost() {
+    this.boostQueued = true;
+  }
+
   /**
    * Apply movement based on current input state
    * Handles rotation, acceleration, deceleration, and drag
@@ -70,6 +101,8 @@ class Ship {
    */
   applyMovement(physics) {
     if (!this.body) return;
+
+    this.syncBoostVelocityCap();
 
     const input = this.input;
 
@@ -141,8 +174,43 @@ class Ship {
       );
     }
 
+    this.applyBoost();
+
     // Bounds checking with buffer
     this.enforceBounds();
+  }
+
+  applyBoost() {
+    if (!this.boostQueued || !this.body) return;
+
+    this.boostQueued = false;
+    if (this.hp <= 0) return;
+
+    const now = Date.now();
+    if (this.getBoostCooldownRemaining(now) > 0) return;
+
+    const angle = this.body.rotation + 1.5;
+    const nextVx = this.body.velocity.x + Math.cos(angle) * this.boostImpulse;
+    const nextVy = this.body.velocity.y + Math.sin(angle) * this.boostImpulse;
+
+    this.body.setVelocity(nextVx, nextVy);
+    this.boostActiveUntil = now + this.boostDurationMs;
+    this.syncBoostVelocityCap(now);
+    this._clampVelocity(this.getBoostMaxSpeed());
+    this.lastBoostAt = now;
+  }
+
+  _clampVelocity(maxSpeed) {
+    if (!this.body || !Number.isFinite(maxSpeed) || maxSpeed <= 0) return;
+
+    const vx = this.body.velocity.x;
+    const vy = this.body.velocity.y;
+    const speed = Math.sqrt(vx * vx + vy * vy);
+
+    if (speed > maxSpeed) {
+      const scale = maxSpeed / speed;
+      this.body.setVelocity(vx * scale, vy * scale);
+    }
   }
 
   /**
@@ -229,6 +297,7 @@ class Ship {
    * @returns {Object}
    */
     serialize() {
+      const now = Date.now();
       return {
         playerId: this.id,
         classKey: this.classKey,
@@ -243,6 +312,10 @@ class Ship {
         maxHp: this.maxHp,
         xp: this.xp,
         maxXp: this.maxXp,
+        boostCooldownMs: this.boostCooldownMs,
+        boostCooldownRemainingMs: this.getBoostCooldownRemaining(now),
+        boostDurationMs: this.boostDurationMs,
+        boostActiveRemainingMs: Math.max(0, this.boostActiveUntil - now),
 
         // Live movement stats
         maxSpeed: this.stats?.maxSpeed ?? 0,

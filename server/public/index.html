@@ -73,8 +73,8 @@
         gap: 8px;
       }
       .toolbar-left   { flex: 1; justify-content: flex-start; }
-      .toolbar-center { flex: 2; justify-content: center; gap: 16px; }
-      .toolbar-right  { flex: 1; justify-content: flex-end; }
+      .toolbar-center { flex: 1; justify-content: center; gap: 16px; }
+      .toolbar-right  { flex: 2; justify-content: flex-end; }
 
       .toolbar-btn {
         padding: 4px 14px;
@@ -122,6 +122,7 @@
         display: flex;
         align-items: center;
         gap: 10px;
+        flex-wrap: nowrap;
       }
       .music-volume-control {
         display: flex;
@@ -135,18 +136,24 @@
         text-transform: uppercase;
         white-space: nowrap;
       }
-      .music-volume-slider {
+      .music-volume-slider,
+      .sfx-volume-slider {
         width: 96px;
         height: 16px;
         cursor: pointer;
         background: transparent;
         accent-color: #00ffff;
       }
-      .music-volume-slider:focus-visible {
+      .sfx-volume-slider {
+        accent-color: #66ffcc;
+      }
+      .music-volume-slider:focus-visible,
+      .sfx-volume-slider:focus-visible {
         outline: 1px solid #00ffff;
         outline-offset: 2px;
       }
-      .music-volume-value {
+      .music-volume-value,
+      .sfx-volume-value {
         min-width: 30px;
         text-align: right;
       }
@@ -157,7 +164,7 @@
         top: 44px;
         left: 16px;
         width: 140px;
-        height: 64px;
+        height: 90px;
         z-index: 900;
         display: none;
       }
@@ -169,7 +176,7 @@
         top: 0;
         left: 0;
         width: 140px;
-        height: 64px;
+        height: 90px;
       }
       .hud-frame {
         position: absolute;
@@ -216,6 +223,117 @@
       }
       .hp-text { top: 10px; }
       .xp-text { top: 44px; }
+      .boost-meter {
+        position: absolute;
+        top: 70px;
+        left: 10px;
+        width: 120px;
+        height: 14px;
+        box-sizing: border-box;
+        border: 1px solid rgba(0, 255, 255, 0.65);
+        background: rgba(0, 8, 14, 0.78);
+        box-shadow: inset 0 0 8px rgba(0, 0, 0, 0.9), 0 0 8px rgba(0, 255, 255, 0.2);
+        overflow: hidden;
+        z-index: 3;
+      }
+      .boost-meter-fill {
+        position: absolute;
+        top: 0;
+        left: 0;
+        height: 100%;
+        width: 100%;
+        background: linear-gradient(90deg, #00ccff, #66ffcc);
+        box-shadow: 0 0 8px rgba(0, 255, 255, 0.5);
+        transition: width 0.08s linear;
+      }
+      .boost-meter.ready {
+        border-color: #66ffcc;
+      }
+      .boost-meter-text {
+        position: absolute;
+        inset: 0;
+        z-index: 2;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family: 'Orbitron', sans-serif;
+        font-size: 9px;
+        font-weight: 600;
+        color: #ffffff;
+        text-shadow: 0 1px 2px rgba(0,0,0,0.95);
+        pointer-events: none;
+      }
+
+      #kill-feed {
+        position: fixed;
+        top: 48px;
+        right: 16px;
+        z-index: 920;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 6px;
+        max-width: min(360px, calc(100vw - 32px));
+        pointer-events: none;
+        font-family: 'Orbitron', sans-serif;
+      }
+      .kill-feed-entry {
+        box-sizing: border-box;
+        min-width: 220px;
+        max-width: 100%;
+        padding: 7px 10px;
+        border: 1px solid rgba(0, 255, 255, 0.38);
+        border-radius: 2px;
+        background: rgba(0, 8, 14, 0.82);
+        color: #e8fbff;
+        font-size: 11px;
+        font-weight: 600;
+        line-height: 1.35;
+        text-align: right;
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.95);
+        box-shadow: inset 0 0 10px rgba(0, 255, 255, 0.08), 0 2px 10px rgba(0, 0, 0, 0.55);
+        opacity: 0;
+        transform: translateX(12px);
+        animation: kill-feed-in 160ms ease-out forwards, kill-feed-out 420ms ease-in 4.8s forwards;
+      }
+      .kill-feed-entry .killer {
+        color: #66ffcc;
+      }
+      .kill-feed-entry .victim {
+        color: #ff7777;
+      }
+      .kill-feed-entry.environment {
+        border-color: rgba(255, 221, 102, 0.45);
+      }
+      .kill-feed-entry.environment .verb {
+        color: #ffdd66;
+      }
+      .kill-feed-entry.level-up {
+        border-color: rgba(102, 255, 204, 0.48);
+        box-shadow: inset 0 0 12px rgba(102, 255, 204, 0.1), 0 2px 10px rgba(0, 0, 0, 0.55);
+      }
+      .kill-feed-entry .level-player {
+        color: #66ffcc;
+      }
+      .kill-feed-entry .level-points {
+        color: #ffdd66;
+      }
+      @keyframes kill-feed-in {
+        from {
+          opacity: 0;
+          transform: translateX(12px);
+        }
+        to {
+          opacity: 1;
+          transform: translateX(0);
+        }
+      }
+      @keyframes kill-feed-out {
+        to {
+          opacity: 0;
+          transform: translateX(12px);
+        }
+      }
 
       #debug-panel {
         position: absolute;
@@ -358,8 +476,56 @@
       align-items: center;
       justify-content: center;
       gap: 10px;
+      flex-wrap: wrap;
       width: 100%;
       margin-top: -12px;
+    }
+
+    .controls-card {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 12px 14px;
+      margin-top: -14px;
+      background: rgba(0, 10, 18, 0.62);
+      border: 1px solid rgba(0, 255, 255, 0.28);
+      border-radius: 4px;
+      box-shadow: inset 0 0 18px rgba(0, 255, 255, 0.04);
+      font-family: 'Orbitron', sans-serif;
+    }
+
+    .controls-title {
+      margin: 0 0 9px 0;
+      color: #66ffcc;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 1.4px;
+      text-transform: uppercase;
+      text-align: center;
+    }
+
+    .controls-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 7px 12px;
+    }
+
+    .control-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      min-width: 0;
+      color: rgba(232, 251, 255, 0.82);
+      font-size: 10px;
+      letter-spacing: 0.8px;
+      text-transform: uppercase;
+    }
+
+    .control-key {
+      color: #ffffff;
+      font-size: 10px;
+      white-space: nowrap;
+      text-shadow: 0 0 7px rgba(102, 255, 204, 0.45);
     }
 
     .login-form {
@@ -572,6 +738,7 @@
 
   <body>
     <audio id="main-theme" src="assets/main_theme.mp3" loop preload="auto"></audio>
+    <audio id="button-press-sfx" src="assets/buttonpress.mp3" preload="auto"></audio>
     <div id="damage-vignette" aria-hidden="true"></div>
 
     <!-- Login Overlay -->
@@ -579,12 +746,26 @@
       <div class="login-container">
         <h1 class="login-title">ORBITFALL</h1>
         <p class="login-subtitle">Welcome, Pilot</p>
+        <div class="controls-card" aria-label="Player controls">
+          <p class="controls-title">Controls</p>
+          <div class="controls-grid">
+            <div class="control-row"><span>Move</span><span class="control-key">WASD / Arrows</span></div>
+            <div class="control-row"><span>Shoot</span><span class="control-key">Space</span></div>
+            <div class="control-row"><span>Boost</span><span class="control-key">Left Ctrl</span></div>
+            <div class="control-row"><span>Menus</span><span class="control-key">Click / Enter</span></div>
+          </div>
+        </div>
         <div class="login-music-toggle music-controls">
           <button type="button" class="toolbar-btn music-toggle-btn music-off" aria-pressed="false">MUSIC OFF</button>
           <label class="music-volume-control">
             <span>VOL</span>
             <input type="range" class="music-volume-slider" min="0" max="100" step="1" value="2" aria-label="Music volume" />
             <span class="music-volume-value">2%</span>
+          </label>
+          <label class="music-volume-control">
+            <span>SFX</span>
+            <input type="range" class="sfx-volume-slider" min="0" max="100" step="1" value="100" aria-label="SFX volume" />
+            <span class="sfx-volume-value">100%</span>
           </label>
         </div>
 
@@ -650,9 +831,14 @@
           <div class="hud-fill xp-fill" id="toolbar-xp-fill"></div>
           <span class="hud-bar-text xp-text" id="toolbar-xp-text">0/0</span>
           <img src="assets/Bar.png" class="hud-frame" alt="" draggable="false" />
+          <div class="boost-meter ready" id="toolbar-boost-meter">
+            <div class="boost-meter-fill" id="toolbar-boost-fill"></div>
+            <span class="boost-meter-text" id="toolbar-boost-text">BOOST</span>
+          </div>
         </div>
       </div>
     </div>
+    <div id="kill-feed" aria-live="polite" aria-atomic="false"></div>
     <div id="top-toolbar">
       <div class="toolbar-section toolbar-left">
         <button id="logout-button" class="toolbar-btn toolbar-btn-danger">LOGOUT</button>
@@ -666,6 +852,11 @@
             <span>VOL</span>
             <input type="range" class="music-volume-slider" min="0" max="100" step="1" value="2" aria-label="Music volume" />
             <span class="music-volume-value">2%</span>
+          </label>
+          <label class="music-volume-control">
+            <span>SFX</span>
+            <input type="range" class="sfx-volume-slider" min="0" max="100" step="1" value="100" aria-label="SFX volume" />
+            <span class="sfx-volume-value">100%</span>
           </label>
         </div>
         <button id="debug-button" class="toolbar-btn">DEBUG</button>
@@ -792,6 +983,83 @@
           if (!document.hidden && theme.paused) {
             playTheme();
           }
+        });
+      })();
+    </script>
+
+    <script>
+      (() => {
+        const STORAGE_KEY = 'orbitfall.sfxVolume';
+        const sliders = Array.from(document.querySelectorAll('.sfx-volume-slider'));
+        const values = Array.from(document.querySelectorAll('.sfx-volume-value'));
+
+        const readStoredVolume = () => {
+          try {
+            const saved = window.localStorage.getItem(STORAGE_KEY);
+            if (saved === null) return 1;
+            return Math.max(0, Math.min(1, Number(saved)));
+          } catch (error) {
+            return 1;
+          }
+        };
+
+        let sfxVolume = readStoredVolume();
+
+        const updateSfxControls = () => {
+          const volumePercent = Math.round(sfxVolume * 100);
+          sliders.forEach((slider) => {
+            slider.value = String(volumePercent);
+          });
+          values.forEach((value) => {
+            value.textContent = `${volumePercent}%`;
+          });
+        };
+
+        window.getSfxVolume = () => sfxVolume;
+        window.setSfxVolume = (value) => {
+          const volumePercent = Math.max(0, Math.min(100, Number(value) || 0));
+          sfxVolume = volumePercent / 100;
+
+          try {
+            window.localStorage.setItem(STORAGE_KEY, String(sfxVolume));
+          } catch (error) {}
+
+          updateSfxControls();
+          window.dispatchEvent(new CustomEvent('sfxvolumechange', {
+            detail: { volume: sfxVolume }
+          }));
+        };
+
+        sliders.forEach((slider) => {
+          slider.addEventListener('input', (event) => {
+            window.setSfxVolume(event.target.value);
+          });
+        });
+
+        updateSfxControls();
+      })();
+    </script>
+
+    <script>
+      (() => {
+        const buttonSound = document.getElementById('button-press-sfx');
+        if (!buttonSound) return;
+
+        window.playButtonPressSound = () => {
+          const sound = buttonSound.cloneNode();
+          const volume = typeof window.getSfxVolume === 'function'
+            ? Math.max(0, Math.min(1, Number(window.getSfxVolume()) || 0))
+            : 1;
+
+          sound.volume = volume * 0.75;
+          sound.play().catch(() => {});
+        };
+
+        document.addEventListener('click', (event) => {
+          const target = event.target instanceof Element ? event.target : null;
+          const button = target ? target.closest('button, [role="button"]') : null;
+          if (!button || button.disabled || button.getAttribute('aria-disabled') === 'true') return;
+          window.playButtonPressSound();
         });
       })();
     </script>

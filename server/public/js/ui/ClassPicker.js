@@ -547,6 +547,7 @@ class ClassPicker {
         const pickedKey = this.classKeys[this.selectedIndex];
         if (!this._isOwned(pickedKey)) return;
 
+        this._playButtonPressSound();
         this._complete(pickedKey);
       });
 
@@ -595,6 +596,7 @@ class ClassPicker {
       if (code === 'Enter' || code === 'Space') {
         const pickedKey = this.classKeys[this.selectedIndex];
         if (!this._isOwned(pickedKey)) return;
+        this._playButtonPressSound();
         this._complete(pickedKey);
         return;
       }
@@ -733,6 +735,17 @@ class ClassPicker {
 
     if (this.onPick) {
       this.onPick(classKey);
+    }
+  }
+
+  /**
+   * Play shared button feedback for Phaser UI controls.
+   *
+   * @private
+   */
+  _playButtonPressSound() {
+    if (typeof window !== 'undefined' && typeof window.playButtonPressSound === 'function') {
+      window.playButtonPressSound();
     }
   }
 

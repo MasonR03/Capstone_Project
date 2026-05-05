@@ -7,6 +7,18 @@
 
 import { CLASS_STATS } from '../stats/stats.js';
 
+function clamp01(value) {
+  return Math.max(0, Math.min(1, Number(value) || 0));
+}
+
+function getSfxVolume() {
+  if (typeof window !== 'undefined' && typeof window.getSfxVolume === 'function') {
+    return clamp01(window.getSfxVolume());
+  }
+
+  return 1;
+}
+
 const GameConfig = {
   // World bounds
   world: {
@@ -64,8 +76,16 @@ const GameConfig = {
     maxSpeed: 400,
     acceleration: 200,
     angularSpeed: 420 * (Math.PI / 180),
-    dragFactor: 0.98,
-    gripFactor: 0.2
+    dragFactor: 0.988,
+    gripFactor: 0.1
+  },
+
+  // Boost settings
+  boost: {
+    cooldownMs: 3000,
+    impulse: 360,
+    durationMs: 450,
+    maxSpeedMultiplier: 1.65
   },
 
   // Movement sync
@@ -92,14 +112,44 @@ const GameConfig = {
     worldRange: 600,
     colors: {
       border: 0x00ffff,
-      myDot: 0x00e5ff,
-      otherDot: 0xffffff
+      myDot: 0x44ff66,
+      otherDot: 0xff4444
     }
+  },
+
+  // Reward settings
+  rewards: {
+    playerEliminationXp: 100
+  },
+
+  // Warning thresholds
+  warnings: {
+    lowHpThreshold: 50
   },
 
   // Ping measurement interval
   network: {
     pingInterval: 1000
+  },
+
+  // Collectible settings
+  collectibles: {
+    stars: {
+      collectRadius: 40,
+      defaultXpValue: 30,
+      defaultPointValue: 1
+    }
+  },
+
+  // Audio settings
+  audio: {
+    defaultSfxVolume: 1
+  },
+
+  getSfxVolume,
+
+  getSfxVolumeFor(baseVolume = 1) {
+    return clamp01(baseVolume) * getSfxVolume();
   },
 
   // Weapon settings
@@ -145,6 +195,12 @@ const GameConfig = {
     bullet: 'assets/bullet_defult.png',
     laserSound: 'assets/laser.m4a',
     hitSound: 'assets/hit.mp3',
+    lowHpSound: 'assets/lowhp.m4a',
+    boostSound: 'assets/boost.mp3',
+    weaponHitSound: 'assets/weaponhit.m4a',
+    levelUpSound: 'assets/levelup.mp3',
+    starCollectSound: 'assets/starcollect.mp3',
+    collectibleStar: 'assets/Star.png',
 
     menuIn: 'assets/MenuSliderIn.png',
     menuOut: 'assets/MenuSliderOut.png',

@@ -6,15 +6,18 @@ const UI = require('./ui');
 const EntityManager = require('./managers/EntityManager');
 const BulletManager = require('./managers/BulletManager');
 const ShootingStarManager = require('./managers/ShootingStarManager');
+const CollectibleStarManager = require('./managers/CollectibleStarManager');
 const {
   normalizeUsername,
   getOrCreateProfile,
-  updateProfile
+  updateProfile,
+  recordStarCollected
 } = require('../../persistence/playerProfiles');
 
 // EntityManager and BulletManager instances (initialized in initializeServer)
 let entityManager = null;
 let bulletManager = null;
+let collectibleStarManager = null;
 
 // Global constants (can be accessed via EntityManager .worldConfig)
 const WORLD_WIDTH = 2000;
@@ -60,6 +63,13 @@ function getResolvedShipStats(classKey, progress = {}) {
   };
 }
 
+function getShipLevel(classKey, progress = {}) {
+  const safeKey = SHIP_CLASSES[classKey] ? classKey : DEFAULT_CLASS;
+  const level = Number(progress?.shipProgress?.[safeKey]?.level);
+
+  return Number.isFinite(level) ? Math.max(1, Math.floor(level)) : 1;
+}
+
 function clampHpToMax(hp, maxHp) {
   const safeMaxHp = Number.isFinite(maxHp) ? Math.max(0, maxHp) : 0;
   const safeHp = Number.isFinite(hp) ? hp : safeMaxHp;
@@ -73,6 +83,22 @@ const WEAPON_CONFIG = {
   bulletLifetime: 2000,
   fireRate: 250,
   bulletDamage: 15
+};
+
+const BOOST_CONFIG = {
+  cooldownMs: 3000,
+  impulse: 360,
+  durationMs: 450,
+  maxSpeedMultiplier: 1.65
+};
+
+const COLLECTIBLE_STAR_CONFIG = {
+  maxCount: 6,
+  spawnIntervalMs: 3000,
+  spawnMargin: 100,
+  collectRadius: 58,
+  xpValue: 30,
+  pointValue: 1
 };
 
 // Respawn delay in ms
@@ -121,6 +147,12 @@ function initializeServer(io) {
     { width: WORLD_WIDTH, height: WORLD_HEIGHT },
     WEAPON_CONFIG
   );
+
+  collectibleStarManager = new CollectibleStarManager(
+    { width: WORLD_WIDTH, height: WORLD_HEIGHT },
+    COLLECTIBLE_STAR_CONFIG
+  );
+  collectibleStarManager.fillToCap();
 
   console.log('✅ Physics world initialized');
 
@@ -195,10 +227,15 @@ function initializeServer(io) {
     const ship = entityManager.createShip(socket.id, startX, startY, {
       team: 'neutral',
       classKey: DEFAULT_CLASS,
+      shipLevel: getShipLevel(DEFAULT_CLASS, initialProgress),
       maxSpeed: classConfig.speed,
       acceleration: classConfig.accel,
       maxHp: classConfig.maxHp,
-      hp: classConfig.maxHp
+      hp: classConfig.maxHp,
+      boostCooldownMs: BOOST_CONFIG.cooldownMs,
+      boostImpulse: BOOST_CONFIG.impulse,
+      boostDurationMs: BOOST_CONFIG.durationMs,
+      boostMaxSpeedMultiplier: BOOST_CONFIG.maxSpeedMultiplier
     });
 
     socket.data.playerProgress = initialProgress;
@@ -213,6 +250,7 @@ function initializeServer(io) {
 
     // Send current state to new player
     socket.emit('currentPlayers', entityManager.serializeAll());
+    socket.emit('collectibleStarsSnapshot', collectibleStarManager.serializeAll());
 
     // Notify others
     socket.broadcast.emit('newPlayer', ship.serialize());
@@ -222,6 +260,10 @@ function initializeServer(io) {
       if (typeof callback === 'function') {
         callback();
       }
+    });
+
+    socket.on('requestCollectibleStars', () => {
+      socket.emit('collectibleStarsSnapshot', collectibleStarManager.serializeAll());
     });
 
     // Auto-load profile on connection (replaces old setPlayerName-triggered load)
@@ -279,6 +321,7 @@ function initializeServer(io) {
       const cfg = getResolvedShipStats(safeKey, progress);
 
       ship.classKey = safeKey;
+      ship.shipLevel = getShipLevel(safeKey, progress);
       ship.stats.maxSpeed = cfg.speed;
       ship.stats.acceleration = cfg.accel;
       ship.maxHp = cfg.maxHp;
@@ -287,7 +330,7 @@ function initializeServer(io) {
       ship.hp = clampHpToMax(ship.hp, ship.maxHp);
 
       if (ship.body) {
-        ship.body.setMaxVelocity(ship.stats.maxSpeed);
+        ship.syncBoostVelocityCap();
       }
 
       console.log(
@@ -326,6 +369,51 @@ function initializeServer(io) {
       if (bullet) {
         io.emit('bulletFired', bullet.serialize());
       }
+    });
+
+    socket.on('collectCollectibleStar', (payload) => {
+      const ship = entityManager.getShip(socket.id);
+      const star = collectibleStarManager.tryCollect(payload, ship);
+      if (!star) return;
+
+      io.emit('collectibleStarCollected', {
+        starId: star.id,
+        collectorId: socket.id,
+        x: star.x,
+        y: star.y,
+        xpValue: star.xpValue,
+        pointValue: star.pointValue
+      });
+
+      if (socket.data.username) {
+        void recordStarCollected(socket.data.username);
+      }
+    });
+
+    socket.on('playerLevelUp', (payload = {}) => {
+      const ship = entityManager.getShip(socket.id);
+      if (!ship || ship.hp <= 0) return;
+
+      const pointsGained = Math.max(1, Math.floor(Number(payload.pointsGained) || 1));
+      const reportedLevel = Number(payload.level);
+      const currentLevel = Number.isFinite(ship.shipLevel) ? ship.shipLevel : 1;
+      const nextLevel = Number.isFinite(reportedLevel)
+        ? Math.max(1, Math.floor(reportedLevel))
+        : currentLevel + pointsGained;
+
+      if (nextLevel <= currentLevel) return;
+
+      ship.shipLevel = nextLevel;
+      ship.hp = ship.maxHp;
+
+      io.emit('playerLeveledUp', {
+        playerId: socket.id,
+        playerName: ship.getDisplayName(),
+        shipLevel: ship.shipLevel,
+        pointsGained,
+        hp: ship.hp,
+        maxHp: ship.maxHp
+      });
     });
 
     // Handle disconnect
@@ -376,6 +464,11 @@ function initializeServer(io) {
     lastTime = currentTime;
 
     shootingStarManager.update(delta);
+    const spawnedCollectibleStars = collectibleStarManager.update(delta);
+    spawnedCollectibleStars.forEach((star) => {
+      io.emit('collectibleStarSpawned', star);
+    });
+
     updateGame(io, frameCount, delta);
     frameCount++;
   }, 1000 / 60);
@@ -415,6 +508,9 @@ function handleShipKilled(io, victimId, killerId) {
     ship.lastCollisionDamageAt = 0;
     ship._atBarrier = false;
     ship.barrierHitThisFrame = false;
+    ship.lastBoostAt = 0;
+    ship.boostActiveUntil = 0;
+    ship.boostQueued = false;
 
     io.emit('playerRespawned', {
       playerId: victimId,
@@ -423,6 +519,8 @@ function handleShipKilled(io, victimId, killerId) {
       hp: ship.hp,
       maxHp: ship.maxHp
     });
+
+    io.to(victimId).emit('collectibleStarsSnapshot', collectibleStarManager.serializeAll());
 
     console.log('🔄 Ship respawned:', victimId);
   }, RESPAWN_DELAY);
@@ -461,6 +559,7 @@ function updateGame(io, frameCount, delta) {
   bulletResult.destroyed.forEach((hit) => {
     io.emit('bulletHit', {
       bulletId: hit.bulletId,
+      ownerId: hit.ownerId,
       shipId: hit.shipId,
       damage: hit.damage,
       killed: hit.killed

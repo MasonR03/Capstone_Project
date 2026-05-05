@@ -13,6 +13,9 @@ class Toolbar {
     this.hpText = document.getElementById('toolbar-hp-text');
     this.xpFill = document.getElementById('toolbar-xp-fill');
     this.xpText = document.getElementById('toolbar-xp-text');
+    this.boostMeter = document.getElementById('toolbar-boost-meter');
+    this.boostFill = document.getElementById('toolbar-boost-fill');
+    this.boostText = document.getElementById('toolbar-boost-text');
   }
 
   show() {
@@ -42,6 +45,25 @@ class Toolbar {
     }
     if (this.xpText) {
       this.xpText.textContent = `${Math.max(0, Math.floor(xp))}/${maxXp}`;
+    }
+  }
+
+  updateBoost({ remainingMs = 0, cooldownMs = 3000 } = {}) {
+    const safeCooldownMs = Math.max(1, Number(cooldownMs) || 3000);
+    const safeRemainingMs = Math.max(0, Number(remainingMs) || 0);
+    const readyRatio = Math.max(0, Math.min(1, 1 - (safeRemainingMs / safeCooldownMs)));
+    const ready = safeRemainingMs <= 0;
+
+    if (this.boostFill) {
+      this.boostFill.style.width = `${Math.round(readyRatio * 100)}%`;
+    }
+
+    if (this.boostMeter) {
+      this.boostMeter.classList.toggle('ready', ready);
+    }
+
+    if (this.boostText) {
+      this.boostText.textContent = ready ? 'BOOST' : `${(safeRemainingMs / 1000).toFixed(1)}s`;
     }
   }
 

@@ -28,6 +28,7 @@ class DefaultShip extends Ship {
     // Player-specific properties
     this.socketId = socketId;
     this.playerName = config.playerName || null;
+    this.shipLevel = Number.isFinite(config.shipLevel) ? Math.max(1, Math.floor(config.shipLevel)) : 1;
     this.lastInputSeq = 0; // Track last processed input sequence for reconciliation
   }
 
@@ -38,14 +39,20 @@ class DefaultShip extends Ship {
    * @param {boolean} input.right - Right key pressed
    * @param {boolean} input.up - Up key pressed
    * @param {boolean} input.down - Down key pressed
+   * @param {boolean} input.boost - Boost key pressed
    * @param {number} input.seq - Input sequence number (optional)
    */
   handleInput(input) {
+    if (input.boost) {
+      this.queueBoost();
+    }
+
     this.input = {
       left: input.left || false,
       right: input.right || false,
       up: input.up || false,
-      down: input.down || false
+      down: input.down || false,
+      boost: input.boost || false
     };
 
     // Track input sequence for client-side prediction reconciliation
@@ -82,6 +89,7 @@ class DefaultShip extends Ship {
     return {
       ...base,
       playerName: this.playerName,
+      shipLevel: this.shipLevel,
       lastInputSeq: this.lastInputSeq,
       input: { ...this.input }
     };
