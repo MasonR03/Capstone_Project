@@ -27,6 +27,12 @@ class GameScene extends Phaser.Scene {
     this.entityManager = null;
     this.bulletRenderer = null;
     this.asteroidRenderer = null;
+    this._backdropLayers = [];
+    this._activeBackdropIndex = 0;
+    this._backdropCycleEvent = null;
+    this._backdropFadeTween = null;
+    this._borderTiles = [];
+    this._borderCorners = [];
 
     // Client state
     this._lastShootTime = 0;
@@ -101,8 +107,12 @@ class GameScene extends Phaser.Scene {
     this.load.image('ship_tanker', GameConfig.assets.ships.tanker);
 
     // Backdrop
-    this.load.image('backdrop', GameConfig.assets.backdrop);
+    const backdrops = GameConfig.assets.backdrops || [GameConfig.assets.backdrop];
+    backdrops.forEach((path, index) => {
+      this.load.image(`backdrop_${index}`, path);
+    });
     this.load.image('collectible_star', GameConfig.assets.collectibleStar);
+    this.load.image('asteroid_belt', GameConfig.assets.asteroidBelt);
     this.load.image('asteroid', GameConfig.assets.asteroid);
     this.load.image('exploded_asteroid', GameConfig.assets.explodedAsteroid);
 
@@ -149,9 +159,7 @@ class GameScene extends Phaser.Scene {
     glowCanvas.refresh();
 
     // Backdrop
-    this.add.tileSprite(0, 0, WORLD_W, WORLD_H, 'backdrop')
-      .setOrigin(0, 0)
-      .setDepth(-1);
+    this._addBackdropLayers(WORLD_W, WORLD_H);
 
     // Effects
     this.shootingStars = new ShootingStarRenderer(this, networkManager.getSocket());
@@ -240,6 +248,8 @@ class GameScene extends Phaser.Scene {
    */
   update(time, delta) {
     this.shootingStars.update(delta);
+    this._updateWorldBorderAnimation(delta);
+
     if (this.asteroidRenderer) {
       this.asteroidRenderer.update(delta);
     }
@@ -320,11 +330,350 @@ class GameScene extends Phaser.Scene {
   }
 
   /**
+   * Add stacked backdrop tile layers and start the slow crossfade cycle.
+   *
+   * @param {number} width
+   * @param {number} height
+   * @private
+   */
+  _addBackdropLayers(width, height) {
+    const backdropPaths = GameConfig.assets.backdrops || [GameConfig.assets.backdrop];
+    const backdropKeys = backdropPaths
+      .map((_, index) => `backdrop_${index}`)
+      .filter((key) => this.textures.exists(key));
+
+    this._backdropLayers = backdropKeys.map((key, index) => (
+      this.add.tileSprite(0, 0, width, height, key)
+        .setOrigin(0, 0)
+        .setDepth(-1)
+        .setAlpha(index === 0 ? 1 : 0)
+    ));
+
+    this._activeBackdropIndex = 0;
+
+    if (this._backdropCycleEvent) {
+      this._backdropCycleEvent.remove(false);
+      this._backdropCycleEvent = null;
+    }
+
+    if (this._backdropLayers.length <= 1) return;
+
+    this._backdropCycleEvent = this.time.addEvent({
+      delay: GameConfig.backdrop.holdMs || 14000,
+      loop: true,
+      callback: () => this._fadeToNextBackdrop()
+    });
+  }
+
+  /**
+   * Crossfade from the active backdrop tile to the next one.
+   *
+   * @private
+   */
+  _fadeToNextBackdrop() {
+    if (this._backdropLayers.length <= 1 || this._backdropFadeTween) return;
+
+    const currentIndex = this._activeBackdropIndex;
+    const nextIndex = (currentIndex + 1) % this._backdropLayers.length;
+    const currentLayer = this._backdropLayers[currentIndex];
+    const nextLayer = this._backdropLayers[nextIndex];
+    const fadeState = { progress: 0 };
+
+    this._backdropLayers.forEach((layer, index) => {
+      layer.setAlpha(index === currentIndex ? 1 : 0);
+    });
+
+    nextLayer.setAlpha(0);
+
+    this._backdropFadeTween = this.tweens.add({
+      targets: fadeState,
+      progress: 1,
+      duration: GameConfig.backdrop.fadeMs || 7000,
+      ease: 'Sine.easeInOut',
+      onUpdate: () => {
+        currentLayer.setAlpha(1 - fadeState.progress);
+        nextLayer.setAlpha(fadeState.progress);
+      },
+      onComplete: () => {
+        currentLayer.setAlpha(0);
+        nextLayer.setAlpha(1);
+        this._activeBackdropIndex = nextIndex;
+        this._backdropFadeTween = null;
+      }
+    });
+  }
+
+  /**
    * Add world border visuals.
    *
    * @private
    */
   _addWorldBorders() {
+    const WORLD_W = GameConfig.world.width;
+    const WORLD_H = GameConfig.world.height;
+    const borderWidth = GameConfig.world.borderWidth;
+    const textureKey = 'asteroid_belt';
+
+    if (!this.textures.exists(textureKey)) {
+      this._addFallbackWorldBorders();
+      return;
+    }
+
+    const frame = this.textures.getFrame(textureKey);
+    const sourceWidth = frame?.cutWidth || frame?.width || borderWidth;
+    const sourceHeight = frame?.cutHeight || frame?.height || borderWidth;
+    const tileScale = borderWidth / Math.max(1, sourceHeight);
+    const scrollSpeed = GameConfig.world.borderScrollSpeed || 0;
+    const cornerSize = borderWidth;
+    const horizontalLength = Math.max(borderWidth, WORLD_W - cornerSize * 2);
+    const verticalLength = Math.max(borderWidth, WORLD_H - cornerSize * 2);
+
+    this._borderTiles = [];
+
+    const addBelt = (x, y, width, height, rotation, speed, offset = 0) => {
+      const tile = this.add.tileSprite(x, y, width, height, textureKey)
+        .setOrigin(0.5, 0.5)
+        .setDepth(0)
+        .setRotation(rotation)
+        .setTileScale(tileScale, tileScale);
+
+      tile.tilePositionX = offset;
+      tile._beltWrap = sourceWidth;
+      tile._beltScrollPixelsPerSecond = tileScale > 0 ? speed / tileScale : 0;
+      this._borderTiles.push(tile);
+      return tile;
+    };
+
+    addBelt(WORLD_W / 2, borderWidth / 2, horizontalLength, borderWidth, 0, scrollSpeed);
+    addBelt(WORLD_W / 2, WORLD_H - borderWidth / 2, horizontalLength, borderWidth, Math.PI, -scrollSpeed * 0.85, sourceWidth * 0.37);
+    addBelt(borderWidth / 2, WORLD_H / 2, verticalLength, borderWidth, -Math.PI / 2, scrollSpeed * 0.75, sourceWidth * 0.16);
+    addBelt(WORLD_W - borderWidth / 2, WORLD_H / 2, verticalLength, borderWidth, Math.PI / 2, -scrollSpeed * 0.7, sourceWidth * 0.61);
+
+    this._addCurvedWorldBorderCorners({
+      textureKey,
+      sourceWidth,
+      sourceHeight,
+      tileScale,
+      cornerSize,
+      scrollSpeed
+    });
+  }
+
+  /**
+   * Create warped quarter-turn textures so the belt bends through each corner.
+   *
+   * @param {Object} config
+   * @private
+   */
+  _addCurvedWorldBorderCorners(config) {
+    const WORLD_W = GameConfig.world.width;
+    const WORLD_H = GameConfig.world.height;
+    const sourceImage = this.textures.get(config.textureKey)?.getSourceImage?.();
+
+    if (!sourceImage || typeof document === 'undefined') return;
+
+    const sourceCanvas = document.createElement('canvas');
+    sourceCanvas.width = config.sourceWidth;
+    sourceCanvas.height = config.sourceHeight;
+
+    const sourceContext = sourceCanvas.getContext('2d', { willReadFrequently: true });
+    if (!sourceContext) return;
+
+    sourceContext.drawImage(sourceImage, 0, 0, config.sourceWidth, config.sourceHeight);
+
+    const cornerSize = Math.max(1, Math.round(config.cornerSize));
+    const sourceData = sourceContext.getImageData(0, 0, config.sourceWidth, config.sourceHeight).data;
+    const arcSourceLength = ((Math.PI / 2) * (cornerSize / 2)) / Math.max(0.001, config.tileScale);
+    const halfCorner = cornerSize / 2;
+
+    const cornerConfigs = [
+      {
+        key: 'asteroid_belt_corner_tl',
+        x: halfCorner,
+        y: halfCorner,
+        centerX: cornerSize,
+        centerY: cornerSize,
+        startAngle: -Math.PI / 2,
+        sweepAngle: -Math.PI / 2,
+        offset: config.sourceWidth * 0.08,
+        speed: config.scrollSpeed * 0.35
+      },
+      {
+        key: 'asteroid_belt_corner_tr',
+        x: WORLD_W - halfCorner,
+        y: halfCorner,
+        centerX: 0,
+        centerY: cornerSize,
+        startAngle: -Math.PI / 2,
+        sweepAngle: Math.PI / 2,
+        offset: config.sourceWidth * 0.29,
+        speed: -config.scrollSpeed * 0.35
+      },
+      {
+        key: 'asteroid_belt_corner_br',
+        x: WORLD_W - halfCorner,
+        y: WORLD_H - halfCorner,
+        centerX: 0,
+        centerY: 0,
+        startAngle: 0,
+        sweepAngle: Math.PI / 2,
+        offset: config.sourceWidth * 0.76,
+        speed: -config.scrollSpeed * 0.35
+      },
+      {
+        key: 'asteroid_belt_corner_bl',
+        x: halfCorner,
+        y: WORLD_H - halfCorner,
+        centerX: cornerSize,
+        centerY: 0,
+        startAngle: Math.PI / 2,
+        sweepAngle: Math.PI / 2,
+        offset: config.sourceWidth * 0.53,
+        speed: config.scrollSpeed * 0.35
+      }
+    ];
+
+    this._borderCorners = cornerConfigs.map((cornerConfig) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = cornerSize;
+      canvas.height = cornerSize;
+
+      const context = canvas.getContext('2d');
+      if (!context) return null;
+
+      if (this.textures.exists(cornerConfig.key)) {
+        this.textures.remove(cornerConfig.key);
+      }
+
+      const corner = {
+        ...cornerConfig,
+        canvas,
+        context,
+        imageData: context.createImageData(cornerSize, cornerSize),
+        pixelMap: this._buildCurvedBorderPixelMap(cornerConfig, cornerSize, config.sourceHeight, arcSourceLength),
+        sourceData,
+        sourceWidth: config.sourceWidth,
+        sourceHeight: config.sourceHeight,
+        offset: cornerConfig.offset,
+        scrollPixelsPerSecond: config.tileScale > 0 ? cornerConfig.speed / config.tileScale : 0
+      };
+
+      this._drawCurvedBorderCorner(corner);
+      corner.texture = this.textures.addCanvas(cornerConfig.key, canvas);
+
+      this.add.image(cornerConfig.x, cornerConfig.y, cornerConfig.key)
+        .setOrigin(0.5, 0.5)
+        .setDepth(0);
+
+      return corner;
+    }).filter(Boolean);
+  }
+
+  /**
+   * Precalculate the source lookup for one curved border corner.
+   *
+   * @param {Object} cornerConfig
+   * @param {number} cornerSize
+   * @param {number} sourceHeight
+   * @param {number} arcSourceLength
+   * @returns {Array<Object|null>}
+   * @private
+   */
+  _buildCurvedBorderPixelMap(cornerConfig, cornerSize, sourceHeight, arcSourceLength) {
+    const pixelMap = new Array(cornerSize * cornerSize);
+    const outerRadius = cornerSize;
+
+    for (let y = 0; y < cornerSize; y += 1) {
+      for (let x = 0; x < cornerSize; x += 1) {
+        const dx = x - cornerConfig.centerX;
+        const dy = y - cornerConfig.centerY;
+        const radius = Math.sqrt(dx * dx + dy * dy);
+        const index = y * cornerSize + x;
+
+        if (radius > outerRadius) {
+          pixelMap[index] = null;
+          continue;
+        }
+
+        const progress = this._getCurvedBorderAngleProgress(
+          Math.atan2(dy, dx),
+          cornerConfig.startAngle,
+          cornerConfig.sweepAngle
+        );
+
+        if (progress < 0 || progress > 1) {
+          pixelMap[index] = null;
+          continue;
+        }
+
+        pixelMap[index] = {
+          sourceX: progress * arcSourceLength,
+          sourceY: Math.min(
+            sourceHeight - 1,
+            Math.max(0, Math.floor((1 - radius / outerRadius) * (sourceHeight - 1)))
+          )
+        };
+      }
+    }
+
+    return pixelMap;
+  }
+
+  /**
+   * Normalize an angle to a 0..1 position across a curved corner.
+   *
+   * @param {number} angle
+   * @param {number} startAngle
+   * @param {number} sweepAngle
+   * @returns {number}
+   * @private
+   */
+  _getCurvedBorderAngleProgress(angle, startAngle, sweepAngle) {
+    if (sweepAngle < 0) {
+      while (angle > startAngle) angle -= Math.PI * 2;
+      return (startAngle - angle) / Math.abs(sweepAngle);
+    }
+
+    while (angle < startAngle) angle += Math.PI * 2;
+    return (angle - startAngle) / sweepAngle;
+  }
+
+  /**
+   * Redraw one curved corner with its current tile offset.
+   *
+   * @param {Object} corner
+   * @private
+   */
+  _drawCurvedBorderCorner(corner) {
+    const output = corner.imageData.data;
+    output.fill(0);
+
+    corner.pixelMap.forEach((pixel, index) => {
+      if (!pixel) return;
+
+      const sourceX = Math.floor((corner.offset + pixel.sourceX) % corner.sourceWidth);
+      const sourceIndex = (pixel.sourceY * corner.sourceWidth + sourceX) * 4;
+      const outputIndex = index * 4;
+
+      output[outputIndex] = corner.sourceData[sourceIndex];
+      output[outputIndex + 1] = corner.sourceData[sourceIndex + 1];
+      output[outputIndex + 2] = corner.sourceData[sourceIndex + 2];
+      output[outputIndex + 3] = corner.sourceData[sourceIndex + 3];
+    });
+
+    corner.context.putImageData(corner.imageData, 0, 0);
+
+    if (corner.texture?.refresh) {
+      corner.texture.refresh();
+    }
+  }
+
+  /**
+   * Add simple red borders if the belt texture is unavailable.
+   *
+   * @private
+   */
+  _addFallbackWorldBorders() {
     const WORLD_W = GameConfig.world.width;
     const WORLD_H = GameConfig.world.height;
     const borderWidth = GameConfig.world.borderWidth;
@@ -334,6 +683,33 @@ class GameScene extends Phaser.Scene {
     this.add.rectangle(WORLD_W / 2, WORLD_H - borderWidth / 2, WORLD_W, borderWidth, borderColor).setDepth(0);
     this.add.rectangle(borderWidth / 2, WORLD_H / 2, borderWidth, WORLD_H, borderColor).setDepth(0);
     this.add.rectangle(WORLD_W - borderWidth / 2, WORLD_H / 2, borderWidth, WORLD_H, borderColor).setDepth(0);
+  }
+
+  /**
+   * Scroll the asteroid belt tiles so the map boundary feels alive.
+   *
+   * @param {number} delta
+   * @private
+   */
+  _updateWorldBorderAnimation(delta) {
+    if (!Number.isFinite(delta)) return;
+
+    this._borderTiles.forEach((tile) => {
+      if (!tile?.active || !Number.isFinite(tile._beltScrollPixelsPerSecond)) return;
+
+      const wrap = Math.max(1, tile._beltWrap || 1);
+      const nextPosition = tile.tilePositionX + tile._beltScrollPixelsPerSecond * (delta / 1000);
+      tile.tilePositionX = ((nextPosition % wrap) + wrap) % wrap;
+    });
+
+    this._borderCorners.forEach((corner) => {
+      if (!Number.isFinite(corner.scrollPixelsPerSecond)) return;
+
+      const wrap = Math.max(1, corner.sourceWidth || 1);
+      const nextOffset = corner.offset - corner.scrollPixelsPerSecond * (delta / 1000);
+      corner.offset = ((nextOffset % wrap) + wrap) % wrap;
+      this._drawCurvedBorderCorner(corner);
+    });
   }
 
   /**

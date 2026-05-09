@@ -24,8 +24,9 @@ const GameConfig = {
   world: {
     width: 2000,
     height: 2000,
-    borderWidth: 30,
-    borderBuffer: 20
+    borderWidth: 112,
+    borderBuffer: 20,
+    borderScrollSpeed: 12
   },
 
   // Phaser game configuration
@@ -103,6 +104,12 @@ const GameConfig = {
     initialZoom: 1.0,
     baseWidth: 1280,
     baseHeight: 720
+  },
+
+  // Backdrop settings
+  backdrop: {
+    holdMs: 14000,
+    fadeMs: 7000
   },
 
   // Minimap settings
@@ -204,6 +211,7 @@ const GameConfig = {
     hitSound: 'assets/hit.mp3',
     lowHpSound: 'assets/lowhp.m4a',
     boostSound: 'assets/boost.mp3',
+    asteroidBelt: 'assets/asteroidbelt.png',
     asteroid: 'assets/asteroid.png',
     explodedAsteroid: 'assets/exploded_asteroid.png',
     asteroidBoom: 'assets/asteroidboom.mp3',
@@ -214,7 +222,12 @@ const GameConfig = {
 
     menuIn: 'assets/MenuSliderIn.png',
     menuOut: 'assets/MenuSliderOut.png',
-    backdrop: 'assets/backdrop_tile.webp'
+    backdrop: 'assets/backdrop_tile.webp',
+    backdrops: [
+      'assets/backdrop_tile.webp',
+      'assets/backdrop_tile1.webp',
+      'assets/backdrop_tile3.webp'
+    ]
   }
 };
 
