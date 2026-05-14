@@ -11,7 +11,6 @@ env:
   CONTAINER_NAME: capstone-app
   HOST_PORT: 8082
   CONTAINER_PORT: 8082
-  DB_PORT: 15432
 
 jobs:
   build-and-push:
