@@ -63,6 +63,15 @@ io.engine.use(sessionMiddleware);
 app.use('/api', authRoutes);
 
 // ------------------------------
+// Client config endpoint
+// ------------------------------
+app.get('/api/config', (req, res) => {
+  res.json({
+    debug: process.env.DEBUG === 'true'
+  });
+});
+
+// ------------------------------
 // Serve your public client files
 // ------------------------------
 // (update the path if public is outside server/)
@@ -80,11 +89,6 @@ app.use(
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
-
-// ------------------------------
-// Initialize the authoritative game server
-// ------------------------------
-initializeServer(io);
 
 // ------------------------------
 // Optional DB connection check (Prisma)
@@ -153,8 +157,30 @@ void (async () => {
 // Read port from environment (or .env). Falls back to 8082.
 // ------------------------------
 const PORT = process.env.PORT || 8082;
+let gameServerInitialized = false;
+
+function startAuthoritativeGameServer() {
+  if (gameServerInitialized) return;
+  initializeServer(io);
+  gameServerInitialized = true;
+}
+
+server.on('error', (err) => {
+  if (err && err.code === 'EADDRINUSE') {
+    console.error(
+      `Port ${PORT} is already in use. Stop the running server or start with a different port, e.g. PowerShell: $env:PORT=8086; npm run server`
+    );
+    process.exit(1);
+  }
+
+  console.error('Failed to start game server.');
+  console.error(err);
+  process.exit(1);
+});
+
 server.listen(PORT, () => {
   console.log(`Game server running at http://localhost:${PORT}`);
+  startAuthoritativeGameServer();
 });
 
 // ------------------------------

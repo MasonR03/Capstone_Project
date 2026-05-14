@@ -6,15 +6,20 @@ const UI = require('./ui');
 const EntityManager = require('./managers/EntityManager');
 const BulletManager = require('./managers/BulletManager');
 const ShootingStarManager = require('./managers/ShootingStarManager');
+const CollectibleStarManager = require('./managers/CollectibleStarManager');
+const AsteroidManager = require('./managers/AsteroidManager');
 const {
   normalizeUsername,
   getOrCreateProfile,
-  updateProfile
+  updateProfile,
+  recordStarCollected
 } = require('../../persistence/playerProfiles');
 
 // EntityManager and BulletManager instances (initialized in initializeServer)
 let entityManager = null;
 let bulletManager = null;
+let collectibleStarManager = null;
+let asteroidManager = null;
 
 // Global constants (can be accessed via EntityManager .worldConfig)
 const WORLD_WIDTH = 2000;
@@ -60,6 +65,20 @@ function getResolvedShipStats(classKey, progress = {}) {
   };
 }
 
+function getShipLevel(classKey, progress = {}) {
+  const safeKey = SHIP_CLASSES[classKey] ? classKey : DEFAULT_CLASS;
+  const level = Number(progress?.shipProgress?.[safeKey]?.level);
+
+  return Number.isFinite(level) ? Math.max(1, Math.floor(level)) : 1;
+}
+
+function clampHpToMax(hp, maxHp) {
+  const safeMaxHp = Number.isFinite(maxHp) ? Math.max(0, maxHp) : 0;
+  const safeHp = Number.isFinite(hp) ? hp : safeMaxHp;
+
+  return Math.max(0, Math.min(safeHp, safeMaxHp));
+}
+
 // Weapon config (server-side)
 const WEAPON_CONFIG = {
   bulletSpeed: 500,
@@ -68,11 +87,40 @@ const WEAPON_CONFIG = {
   bulletDamage: 15
 };
 
+const BOOST_CONFIG = {
+  cooldownMs: 3000,
+  impulse: 430,
+  durationMs: 650,
+  momentumMs: 1400,
+  maxSpeedMultiplier: 2.1
+};
+
+const COLLECTIBLE_STAR_CONFIG = {
+  maxCount: 6,
+  spawnIntervalMs: 3000,
+  spawnMargin: 100,
+  collectRadius: 58,
+  xpValue: 30,
+  pointValue: 1
+};
+
+const ASTEROID_CONFIG = {
+  maxActive: 4,
+  spawnIntervalMs: 3600,
+  minSpeed: 75,
+  maxSpeed: 145,
+  hp: 50,
+  radius: 32,
+  contactDamage: 35,
+  xpValue: 200
+};
+
 // Respawn delay in ms
 const RESPAWN_DELAY = 3000;
 
 // Game state
 const gameState = {};
+const killStreaks = new Map();
 
 // Physics world
 let physics = null;
@@ -88,6 +136,7 @@ function removeStalePlayers(io) {
 
   staleIds.forEach((playerId) => {
     console.warn('🧹 Removing stale player without active socket:', playerId);
+    killStreaks.delete(playerId);
     io.emit('playerDisconnected', playerId);
   });
 }
@@ -115,6 +164,17 @@ function initializeServer(io) {
     WEAPON_CONFIG
   );
 
+  collectibleStarManager = new CollectibleStarManager(
+    { width: WORLD_WIDTH, height: WORLD_HEIGHT },
+    COLLECTIBLE_STAR_CONFIG
+  );
+  collectibleStarManager.fillToCap();
+
+  asteroidManager = new AsteroidManager(
+    { width: WORLD_WIDTH, height: WORLD_HEIGHT },
+    ASTEROID_CONFIG
+  );
+
   console.log('✅ Physics world initialized');
 
   // Reject sockets without a valid session
@@ -132,9 +192,11 @@ function initializeServer(io) {
     removeStalePlayers(io);
 
     const username = normalizeUsername(socket.request.session.username);
+    const isGuest = Boolean(socket.request.session.isGuest);
     console.log('🎮 User connected:', socket.id.substring(0, 8), '(' + username + ')');
 
     socket.data.username = username;
+    socket.data.isGuest = isGuest;
     socket.data.profileLoaded = false;
     socket.data.profileLoadPromise = null;
 
@@ -188,10 +250,16 @@ function initializeServer(io) {
     const ship = entityManager.createShip(socket.id, startX, startY, {
       team: 'neutral',
       classKey: DEFAULT_CLASS,
+      shipLevel: getShipLevel(DEFAULT_CLASS, initialProgress),
       maxSpeed: classConfig.speed,
       acceleration: classConfig.accel,
       maxHp: classConfig.maxHp,
-      hp: classConfig.maxHp
+      hp: classConfig.maxHp,
+      boostCooldownMs: BOOST_CONFIG.cooldownMs,
+      boostImpulse: BOOST_CONFIG.impulse,
+      boostDurationMs: BOOST_CONFIG.durationMs,
+      boostMomentumMs: BOOST_CONFIG.momentumMs,
+      boostMaxSpeedMultiplier: BOOST_CONFIG.maxSpeedMultiplier
     });
 
     socket.data.playerProgress = initialProgress;
@@ -206,6 +274,8 @@ function initializeServer(io) {
 
     // Send current state to new player
     socket.emit('currentPlayers', entityManager.serializeAll());
+    socket.emit('collectibleStarsSnapshot', collectibleStarManager.serializeAll());
+    socket.emit('asteroidSnapshot', asteroidManager.serializeAll());
 
     // Notify others
     socket.broadcast.emit('newPlayer', ship.serialize());
@@ -217,8 +287,16 @@ function initializeServer(io) {
       }
     });
 
+    socket.on('requestCollectibleStars', () => {
+      socket.emit('collectibleStarsSnapshot', collectibleStarManager.serializeAll());
+    });
+
+    socket.on('requestAsteroids', () => {
+      socket.emit('asteroidSnapshot', asteroidManager.serializeAll());
+    });
+
     // Auto-load profile on connection (replaces old setPlayerName-triggered load)
-    if (username) {
+    if (username && !isGuest) {
       socket.data.profileLoadPromise = getOrCreateProfile(username)
         .then((profile) => {
           socket.data.profileLoaded = true;
@@ -272,15 +350,16 @@ function initializeServer(io) {
       const cfg = getResolvedShipStats(safeKey, progress);
 
       ship.classKey = safeKey;
+      ship.shipLevel = getShipLevel(safeKey, progress);
       ship.stats.maxSpeed = cfg.speed;
       ship.stats.acceleration = cfg.accel;
       ship.maxHp = cfg.maxHp;
 
-      // Keep HP valid and let HP upgrade fill the bar
-      ship.hp = ship.maxHp;
+      // Progress/class sync must not heal damage; only keep HP legal if maxHp changes.
+      ship.hp = clampHpToMax(ship.hp, ship.maxHp);
 
       if (ship.body) {
-        ship.body.setMaxVelocity(ship.stats.maxSpeed);
+        ship.syncBoostVelocityCap();
       }
 
       console.log(
@@ -321,6 +400,51 @@ function initializeServer(io) {
       }
     });
 
+    socket.on('collectCollectibleStar', (payload) => {
+      const ship = entityManager.getShip(socket.id);
+      const star = collectibleStarManager.tryCollect(payload, ship);
+      if (!star) return;
+
+      io.emit('collectibleStarCollected', {
+        starId: star.id,
+        collectorId: socket.id,
+        x: star.x,
+        y: star.y,
+        xpValue: star.xpValue,
+        pointValue: star.pointValue
+      });
+
+      if (socket.data.username && !socket.data.isGuest) {
+        void recordStarCollected(socket.data.username);
+      }
+    });
+
+    socket.on('playerLevelUp', (payload = {}) => {
+      const ship = entityManager.getShip(socket.id);
+      if (!ship || ship.hp <= 0) return;
+
+      const pointsGained = Math.max(1, Math.floor(Number(payload.pointsGained) || 1));
+      const reportedLevel = Number(payload.level);
+      const currentLevel = Number.isFinite(ship.shipLevel) ? ship.shipLevel : 1;
+      const nextLevel = Number.isFinite(reportedLevel)
+        ? Math.max(1, Math.floor(reportedLevel))
+        : currentLevel + pointsGained;
+
+      if (nextLevel <= currentLevel) return;
+
+      ship.shipLevel = nextLevel;
+      ship.hp = ship.maxHp;
+
+      io.emit('playerLeveledUp', {
+        playerId: socket.id,
+        playerName: ship.getDisplayName(),
+        shipLevel: ship.shipLevel,
+        pointsGained,
+        hp: ship.hp,
+        maxHp: ship.maxHp
+      });
+    });
+
     // Handle disconnect
     socket.on('disconnect', () => {
       const ship = entityManager.getShip(socket.id);
@@ -328,7 +452,7 @@ function initializeServer(io) {
       console.log('👋 User disconnected:', playerName);
 
       const username = socket.data.username || (ship && ship.playerName) || null;
-      if (username && ship) {
+      if (username && ship && !socket.data.isGuest) {
         void updateProfile(username, {
           xp: Number.isFinite(ship.xp) ? Math.max(0, Math.floor(ship.xp)) : 0,
           maxXp: Number.isFinite(ship.maxXp) ? Math.max(1, Math.floor(ship.maxXp)) : 100
@@ -337,6 +461,7 @@ function initializeServer(io) {
 
       // Clean up bullets belonging to this player
       bulletManager.removeByOwner(socket.id);
+      killStreaks.delete(socket.id);
 
       // Clean up the player (EntityManager handles physics body cleanup)
       if (entityManager.removeShip(socket.id)) {
@@ -369,6 +494,40 @@ function initializeServer(io) {
     lastTime = currentTime;
 
     shootingStarManager.update(delta);
+
+    const asteroidResult = asteroidManager.update(delta, entityManager.ships, bulletManager);
+    asteroidResult.spawned.forEach((asteroid) => {
+      io.emit('asteroidSpawned', asteroid);
+    });
+    asteroidResult.shipHits.forEach((hit) => {
+      io.emit('asteroidShipHit', hit);
+      if (hit.killed) {
+          handleShipKilled(io, hit.shipId, null, 'asteroid');
+      }
+    });
+    if (asteroidResult.bulletHits.length > 0) {
+      io.emit('asteroidHits', asteroidResult.bulletHits);
+      io.emit('bulletsRemoved', asteroidResult.bulletHits.map((hit) => hit.bulletId));
+    }
+    asteroidResult.destroyed.forEach((event) => {
+      const ship = entityManager.getShip(event.ownerId);
+      if (ship) {
+        ship.gainXP(event.xpValue);
+      }
+      io.emit('asteroidDestroyed', event);
+    });
+
+    const destroyedIds = new Set(asteroidResult.destroyed.map((event) => event.asteroidId));
+    const removedAsteroidIds = asteroidResult.removed.filter((id) => !destroyedIds.has(id));
+    if (removedAsteroidIds.length > 0) {
+      io.emit('asteroidsRemoved', removedAsteroidIds);
+    }
+
+    const spawnedCollectibleStars = collectibleStarManager.update(delta);
+    spawnedCollectibleStars.forEach((star) => {
+      io.emit('collectibleStarSpawned', star);
+    });
+
     updateGame(io, frameCount, delta);
     frameCount++;
   }, 1000 / 60);
@@ -376,6 +535,79 @@ function initializeServer(io) {
   console.log('Server ready!');
 }
 
+
+/**
+ * Mark a ship as killed and schedule its respawn.
+ *
+ * @param {import('socket.io').Server} io
+ * @param {string} victimId
+ * @param {string|null} killerId
+ */
+function handleShipKilled(io, victimId, killerId, cause = null) {
+  const deadShip = entityManager.getShip(victimId);
+  if (!deadShip) return;
+
+  console.log('💀 Ship destroyed:', victimId, 'by', killerId || '(environment)');
+
+  killStreaks.set(victimId, 0);
+
+  if (killerId && killerId !== victimId) {
+    const streak = (killStreaks.get(killerId) || 0) + 1;
+    killStreaks.set(killerId, streak);
+
+    if (streak >= 3) {
+      const killerShip = entityManager.getShip(killerId);
+      const playerName = killerShip?.getDisplayName?.() || `Pilot ${String(killerId).slice(0, 6)}`;
+      const label = streak >= 5 ? 'IS DOMINATING' : 'IS A THREAT';
+
+      io.emit('killStreak', {
+        playerId: killerId,
+        playerName,
+        streak,
+        message: `${playerName} ${label}`
+      });
+    }
+  }
+
+  io.emit('playerKilled', { victimId, killerId, cause });
+
+  setTimeout(() => {
+    const ship = entityManager.getShip(victimId);
+    if (!ship) return;
+
+    ship.hp = ship.maxHp;
+    const newX = Math.floor(Math.random() * (WORLD_WIDTH - 100)) + 50;
+    const newY = Math.floor(Math.random() * (WORLD_HEIGHT - 100)) + 50;
+    ship.x = newX;
+    ship.y = newY;
+    if (ship.body) {
+      ship.body.x = newX;
+      ship.body.y = newY;
+      ship.body.setVelocity(0, 0);
+    }
+    ship.lastCollisionDamageAt = 0;
+    ship._atBarrier = false;
+    ship.barrierHitThisFrame = false;
+    ship.lastBoostAt = 0;
+    ship.boostActiveUntil = 0;
+    ship.boostMomentumUntil = 0;
+    ship.boostMomentumSpeedCap = 0;
+    ship.boostQueued = false;
+
+    io.emit('playerRespawned', {
+      playerId: victimId,
+      x: newX,
+      y: newY,
+      hp: ship.hp,
+      maxHp: ship.maxHp
+    });
+
+    io.to(victimId).emit('collectibleStarsSnapshot', collectibleStarManager.serializeAll());
+    io.to(victimId).emit('asteroidSnapshot', asteroidManager.serializeAll());
+
+    console.log('🔄 Ship respawned:', victimId);
+  }, RESPAWN_DELAY);
+}
 
 function updateGame(io, frameCount, delta) {
   if (frameCount % 60 === 0) {
@@ -410,50 +642,23 @@ function updateGame(io, frameCount, delta) {
   bulletResult.destroyed.forEach((hit) => {
     io.emit('bulletHit', {
       bulletId: hit.bulletId,
+      ownerId: hit.ownerId,
       shipId: hit.shipId,
       damage: hit.damage,
       killed: hit.killed
     });
 
     if (hit.killed) {
-      const deadShip = entityManager.getShip(hit.shipId);
+      handleShipKilled(io, hit.shipId, hit.ownerId);
+    }
+  });
 
-      console.log('💀 Ship destroyed:', hit.shipId, 'by', hit.ownerId);
-      io.emit('playerKilled', {
-        victimId: hit.shipId,
-        killerId: hit.ownerId
-      });
-
-      // Respawn after delay
-      if (deadShip) {
-        setTimeout(() => {
-          // Check if ship still exists (player might have disconnected)
-          const ship = entityManager.getShip(hit.shipId);
-          if (!ship) return;
-
-          // Reset HP and reposition
-          ship.hp = ship.maxHp;
-          const newX = Math.floor(Math.random() * (WORLD_WIDTH - 100)) + 50;
-          const newY = Math.floor(Math.random() * (WORLD_HEIGHT - 100)) + 50;
-          ship.x = newX;
-          ship.y = newY;
-          if (ship.body) {
-            ship.body.x = newX;
-            ship.body.y = newY;
-            ship.body.setVelocity(0, 0);
-          }
-
-          io.emit('playerRespawned', {
-            playerId: hit.shipId,
-            x: newX,
-            y: newY,
-            hp: ship.hp,
-            maxHp: ship.maxHp
-          });
-
-          console.log('🔄 Ship respawned:', hit.shipId);
-        }, RESPAWN_DELAY);
-      }
+  // Handle ship-vs-ship and ship-vs-barrier collisions
+  const collisionEvents = entityManager.processCollisions(Date.now());
+  collisionEvents.forEach((evt) => {
+    if (evt.killed) {
+      const killerId = evt.source === 'ship' ? evt.otherId : null;
+      handleShipKilled(io, evt.shipId, killerId);
     }
   });
 
@@ -471,6 +676,10 @@ function updateGame(io, frameCount, delta) {
   // Broadcast bullet positions every 3 frames (~20 Hz) to save bandwidth
   if (frameCount % 3 === 0 && bulletManager.getCount() > 0) {
     io.emit('bulletUpdates', bulletManager.serializeAll());
+  }
+
+  if (frameCount % 3 === 0) {
+    io.emit('asteroidUpdates', asteroidManager.serializeAll());
   }
 
   // Sends a UI snapshot ~ every 10sec

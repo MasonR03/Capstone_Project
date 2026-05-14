@@ -9,82 +9,336 @@
 
       body {
         margin: 0;
-        background: #1a1a1a;
+        background: #000;
         color: white;
         font-family: sans-serif;
         overflow: hidden;
-        display: flex;
-        justify-content: center;
-        align-items: center;
         height: 100vh;
         position: relative;
       }
       #game-container {
-        width: 800px;
-        height: 600px;
+        width: 100vw;
+        height: 100vh;
         image-rendering: pixelated;
-        border: 4px solid #00ffff;
-        box-shadow: 0 0 20px rgba(0, 255, 255, 0.5);
       }
-      #debug-button {
-        position: absolute;
-        top: 20px;
-        right: 20px;
-        padding: 10px 20px;
-        background: rgba(0, 255, 255, 0.2);
-        border: 2px solid #00ffff;
-        color: #00ffff;
-        cursor: pointer;
-        font-family: monospace;
-        font-size: 14px;
-        display: none;
+      #damage-vignette {
+        position: fixed;
+        inset: 0;
+        z-index: 1100;
+        pointer-events: none;
+        opacity: 0;
+        mix-blend-mode: screen;
+        background:
+          radial-gradient(
+            ellipse at center,
+            rgba(255, 0, 0, 0) 46%,
+            rgba(255, 36, 36, 0.2) 72%,
+            rgba(255, 0, 0, 0.52) 100%
+          ),
+          rgba(255, 0, 0, 0.04);
+        will-change: opacity;
+      }
+      #damage-vignette.active {
+        animation: damage-vignette-pulse 420ms ease-out;
+      }
+      @keyframes damage-vignette-pulse {
+        0% { opacity: 0; }
+        16% { opacity: var(--damage-cue-strength, 1); }
+        100% { opacity: 0; }
+      }
+      /* ---- Top Toolbar (StarCraft-style) ---- */
+      #top-toolbar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 36px;
         z-index: 1000;
+        display: none;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 8px;
+        box-sizing: border-box;
+        background: linear-gradient(180deg, #3a3d45 0%, #23262b 40%, #1a1c20 100%);
+        border-bottom: 2px solid #555a63;
+        box-shadow: inset 0 1px 0 rgba(255,255,255,0.08), 0 2px 6px rgba(0,0,0,0.7);
+        font-family: 'Orbitron', sans-serif;
       }
-      #debug-button:hover {
-        background: rgba(0, 255, 255, 0.3);
+      #top-toolbar.visible {
+        display: flex;
       }
-      #stats-button {
+      .toolbar-section {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .toolbar-left   { flex: 1; justify-content: flex-start; }
+      .toolbar-center { flex: 1; justify-content: center; gap: 16px; }
+      .toolbar-right  { flex: 2; justify-content: flex-end; }
+
+      .toolbar-btn {
+        padding: 4px 14px;
+        font-family: 'Orbitron', sans-serif;
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 1.5px;
+        text-transform: uppercase;
+        cursor: pointer;
+        border: 1px solid #6a6f7a;
+        border-radius: 2px;
+        color: #c0c8d4;
+        background: linear-gradient(180deg, #44484f, #2e3137);
+        box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), 0 1px 2px rgba(0,0,0,0.4);
+        transition: background 0.15s, color 0.15s;
+      }
+      .toolbar-btn:hover {
+        background: linear-gradient(180deg, #555960, #3a3e45);
+        color: #00ffff;
+        border-color: #00ffff;
+      }
+      .toolbar-btn-danger {
+        color: #ff6666;
+        border-color: #884444;
+      }
+      .toolbar-btn-danger:hover {
+        color: #ff4444;
+        border-color: #ff4444;
+        background: linear-gradient(180deg, #4a2020, #331515);
+      }
+      .music-toggle-btn {
+        min-width: 104px;
+      }
+      .music-toggle-btn.music-off {
+        color: #ffcc66;
+        border-color: #886a33;
+        background: linear-gradient(180deg, #4a3d20, #332815);
+      }
+      .music-toggle-btn.music-off:hover {
+        color: #ffdd88;
+        border-color: #ffcc66;
+        background: linear-gradient(180deg, #5a4a26, #3d3018);
+      }
+      .music-controls {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: nowrap;
+      }
+      .music-volume-control {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        color: #c0c8d4;
+        font-family: 'Orbitron', sans-serif;
+        font-size: 10px;
+        font-weight: 600;
+        letter-spacing: 1.2px;
+        text-transform: uppercase;
+        white-space: nowrap;
+      }
+      .music-volume-slider,
+      .sfx-volume-slider {
+        width: 96px;
+        height: 16px;
+        cursor: pointer;
+        background: transparent;
+        accent-color: #00ffff;
+      }
+      .sfx-volume-slider {
+        accent-color: #66ffcc;
+      }
+      .music-volume-slider:focus-visible,
+      .sfx-volume-slider:focus-visible {
+        outline: 1px solid #00ffff;
+        outline-offset: 2px;
+      }
+      .music-volume-value,
+      .sfx-volume-value {
+        min-width: 30px;
+        text-align: right;
+      }
+
+      /* HUD bars — floating upper-right over the game canvas */
+      .hud-bars-wrapper {
+        position: absolute;
+        top: 44px;
+        left: 16px;
+        width: 140px;
+        height: 90px;
+        z-index: 900;
+        display: none;
+      }
+      .hud-bars-wrapper.visible {
+        display: block;
+      }
+      .hud-bars-inner {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 140px;
+        height: 90px;
+      }
+      .hud-frame {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 140px;
+        height: 64px;
+        pointer-events: none;
+        z-index: 2;
+        image-rendering: pixelated;
+      }
+      /* Colored fills positioned behind the frame's transparent windows */
+      .hud-fill {
+        position: absolute;
+        height: 8px;
+        left: 52px;
+        width: 0px;         /* set dynamically via JS (max 74px) */
+        max-width: 74px;
+        z-index: 1;
+        transition: width 0.15s ease-out;
+      }
+      .hp-fill {
+        top: 10px;
+        background: #ff3333;
+      }
+      .xp-fill {
+        top: 44px;
+        background: #00ccff;
+      }
+      /* Number text overlaid on each bar */
+      .hud-bar-text {
+        position: absolute;
+        left: 52px;
+        width: 74px;
+        text-align: center;
+        font-size: 11px;
+        font-family: monospace;
+        font-weight: bold;
+        color: #fff;
+        text-shadow: 0 1px 2px rgba(0,0,0,0.9);
+        pointer-events: none;
+        z-index: 3;
+        line-height: 8px;
+      }
+      .hp-text { top: 10px; }
+      .xp-text { top: 44px; }
+      .boost-meter {
         position: absolute;
         top: 70px;
-        left: 20px;
-        padding: 10px 20px;
-        background: rgba(0, 255, 255, 0.2);
-        border: 2px solid #00ffff;
-        color: #00ffff;
-        cursor: pointer;
-        font-family: monospace;
-        font-size: 14px;
-        display: none;
-        z-index: 1000;
+        left: 10px;
+        width: 120px;
+        height: 14px;
+        box-sizing: border-box;
+        border: 1px solid rgba(0, 255, 255, 0.65);
+        background: rgba(0, 8, 14, 0.78);
+        box-shadow: inset 0 0 8px rgba(0, 0, 0, 0.9), 0 0 8px rgba(0, 255, 255, 0.2);
+        overflow: hidden;
+        z-index: 3;
       }
-      #stats-button:hover {
-        background: rgba(0, 255, 255, 0.3);
-      }
-      #logout-button {
+      .boost-meter-fill {
         position: absolute;
-        top: 20px;
-        left: 20px;
-        padding: 8px 16px;
-        background: rgba(255, 50, 50, 0.15);
-        border: 2px solid #ff4444;
-        color: #ff4444;
-        cursor: pointer;
+        top: 0;
+        left: 0;
+        height: 100%;
+        width: 100%;
+        background: linear-gradient(90deg, #00ccff, #66ffcc);
+        box-shadow: 0 0 8px rgba(0, 255, 255, 0.5);
+        transition: width 0.08s linear;
+      }
+      .boost-meter.ready {
+        border-color: #66ffcc;
+      }
+      .boost-meter-text {
+        position: absolute;
+        inset: 0;
+        z-index: 2;
+        display: flex;
+        align-items: center;
+        justify-content: center;
         font-family: 'Orbitron', sans-serif;
-        font-size: 12px;
-        letter-spacing: 1px;
-        text-transform: uppercase;
-        z-index: 1000;
-        display: none;
-        transition: all 0.3s ease;
+        font-size: 9px;
+        font-weight: 600;
+        color: #ffffff;
+        text-shadow: 0 1px 2px rgba(0,0,0,0.95);
+        pointer-events: none;
       }
-      #logout-button:hover {
-        background: rgba(255, 50, 50, 0.3);
-        box-shadow: 0 0 10px rgba(255, 68, 68, 0.4);
+
+      #kill-feed {
+        position: fixed;
+        top: 48px;
+        right: 16px;
+        z-index: 920;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 6px;
+        max-width: min(360px, calc(100vw - 32px));
+        pointer-events: none;
+        font-family: 'Orbitron', sans-serif;
       }
+      .kill-feed-entry {
+        box-sizing: border-box;
+        min-width: 220px;
+        max-width: 100%;
+        padding: 7px 10px;
+        border: 1px solid rgba(0, 255, 255, 0.38);
+        border-radius: 2px;
+        background: rgba(0, 8, 14, 0.82);
+        color: #e8fbff;
+        font-size: 11px;
+        font-weight: 600;
+        line-height: 1.35;
+        text-align: right;
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.95);
+        box-shadow: inset 0 0 10px rgba(0, 255, 255, 0.08), 0 2px 10px rgba(0, 0, 0, 0.55);
+        opacity: 0;
+        transform: translateX(12px);
+        animation: kill-feed-in 160ms ease-out forwards, kill-feed-out 420ms ease-in 4.8s forwards;
+      }
+      .kill-feed-entry .killer {
+        color: #66ffcc;
+      }
+      .kill-feed-entry .victim {
+        color: #ff7777;
+      }
+      .kill-feed-entry.environment {
+        border-color: rgba(255, 221, 102, 0.45);
+      }
+      .kill-feed-entry.environment .verb {
+        color: #ffdd66;
+      }
+      .kill-feed-entry.level-up {
+        border-color: rgba(102, 255, 204, 0.48);
+        box-shadow: inset 0 0 12px rgba(102, 255, 204, 0.1), 0 2px 10px rgba(0, 0, 0, 0.55);
+      }
+      .kill-feed-entry .level-player {
+        color: #66ffcc;
+      }
+      .kill-feed-entry .level-points {
+        color: #ffdd66;
+      }
+      @keyframes kill-feed-in {
+        from {
+          opacity: 0;
+          transform: translateX(12px);
+        }
+        to {
+          opacity: 1;
+          transform: translateX(0);
+        }
+      }
+      @keyframes kill-feed-out {
+        to {
+          opacity: 0;
+          transform: translateX(12px);
+        }
+      }
+
       #debug-panel {
         position: absolute;
-        top: 70px;
-        right: 20px;
+        top: 38px;
+        right: 8px;
         padding: 15px;
         background: rgba(0, 0, 0, 0.9);
         border: 2px solid #00ffff;
@@ -106,8 +360,8 @@
       }
       #stats-panel {
         position: absolute;
-        top: 120px;
-        left: 20px;
+        top: 38px;
+        left: 8px;
         padding: 15px;
         background: rgba(0, 0, 0, 0.9);
         border: 2px solid #00ffff;
@@ -130,14 +384,16 @@
 
 
     .game-stage {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 16px;
+      position: relative;
+      width: 100vw;
+      height: 100vh;
     }
 
     #title-overlay {
-      display: inline-block;
+      position: absolute;
+      top: 44px;
+      left: 50%;
+      transform: translateX(-50%);
       font-family: 'Orbitron', sans-serif;
       font-weight: 900;
       font-size: 64px;
@@ -154,6 +410,30 @@
       user-select: none;
       z-index: 600;
       white-space: nowrap;
+      opacity: 0;
+    }
+
+    #title-overlay.active {
+      animation: kill-streak-banner 3200ms ease-in-out forwards;
+    }
+
+    @keyframes kill-streak-banner {
+      0% {
+        opacity: 0;
+        transform: translate(-50%, -10px) scale(0.94);
+      }
+      14% {
+        opacity: 1;
+        transform: translate(-50%, 0) scale(1);
+      }
+      72% {
+        opacity: 1;
+        transform: translate(-50%, 0) scale(1);
+      }
+      100% {
+        opacity: 0;
+        transform: translate(-50%, -10px) scale(0.98);
+      }
     }
 
     /* scale down on smaller viewports */
@@ -213,6 +493,63 @@
       opacity: 0.8;
       margin: 0;
       text-align: center;
+    }
+
+    .login-music-toggle {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      width: 100%;
+      margin-top: -12px;
+    }
+
+    .controls-card {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 12px 14px;
+      margin-top: -14px;
+      background: rgba(0, 10, 18, 0.62);
+      border: 1px solid rgba(0, 255, 255, 0.28);
+      border-radius: 4px;
+      box-shadow: inset 0 0 18px rgba(0, 255, 255, 0.04);
+      font-family: 'Orbitron', sans-serif;
+    }
+
+    .controls-title {
+      margin: 0 0 9px 0;
+      color: #66ffcc;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 1.4px;
+      text-transform: uppercase;
+      text-align: center;
+    }
+
+    .controls-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 7px 12px;
+    }
+
+    .control-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      min-width: 0;
+      color: rgba(232, 251, 255, 0.82);
+      font-size: 10px;
+      letter-spacing: 0.8px;
+      text-transform: uppercase;
+    }
+
+    .control-key {
+      color: #ffffff;
+      font-size: 10px;
+      white-space: nowrap;
+      text-shadow: 0 0 7px rgba(102, 255, 204, 0.45);
     }
 
     .login-form {
@@ -424,16 +761,43 @@
   </head>
 
   <body>
+    <audio id="main-theme" src="assets/main_theme.mp3" loop preload="auto"></audio>
+    <audio id="button-press-sfx" src="assets/buttonpress.mp3" preload="auto"></audio>
+    <div id="damage-vignette" aria-hidden="true"></div>
+
     <!-- Login Overlay -->
     <div id="login-overlay">
       <div class="login-container">
         <h1 class="login-title">ORBITFALL</h1>
         <p class="login-subtitle">Welcome, Pilot</p>
+        <div class="controls-card" aria-label="Player controls">
+          <p class="controls-title">Controls</p>
+          <div class="controls-grid">
+            <div class="control-row"><span>Move</span><span class="control-key">WASD / Arrows</span></div>
+            <div class="control-row"><span>Shoot</span><span class="control-key">Space</span></div>
+            <div class="control-row"><span>Boost</span><span class="control-key">Left Ctrl</span></div>
+            <div class="control-row"><span>Menus</span><span class="control-key">Click / Enter</span></div>
+          </div>
+        </div>
+        <div class="login-music-toggle music-controls">
+          <button type="button" class="toolbar-btn music-toggle-btn music-off" aria-pressed="false">MUSIC OFF</button>
+          <label class="music-volume-control">
+            <span>VOL</span>
+            <input type="range" class="music-volume-slider" min="0" max="100" step="1" value="2" aria-label="Music volume" />
+            <span class="music-volume-value">2%</span>
+          </label>
+          <label class="music-volume-control">
+            <span>SFX</span>
+            <input type="range" class="sfx-volume-slider" min="0" max="100" step="1" value="100" aria-label="SFX volume" />
+            <span class="sfx-volume-value">100%</span>
+          </label>
+        </div>
 
         <!-- Tabs -->
         <div class="auth-tabs">
           <button class="auth-tab active" data-tab="login">Login</button>
           <button class="auth-tab" data-tab="signup">Sign Up</button>
+          <button class="auth-tab" data-tab="guest">Guest</button>
         </div>
 
         <!-- Login panel -->
@@ -477,18 +841,61 @@
           </form>
         </div>
 
+        <!-- Guest panel -->
+        <div class="auth-panel" id="panel-guest">
+          <form class="login-form" id="guest-form">
+            <label for="guest-username">Gamer Tag</label>
+            <input type="text" id="guest-username" placeholder="Choose a gamer tag" maxlength="20" autocomplete="nickname" required />
+            <button type="submit">Play as Guest</button>
+          </form>
+        </div>
+
         <!-- Error display -->
         <div class="auth-error" id="auth-error"></div>
       </div>
     </div>
 
     <div class="game-stage">
-      <div id="title-overlay">ORBITFALL</div>
+      <div id="title-overlay" aria-live="polite"></div>
       <div id="game-container"></div>
+      <div id="hud-bars" class="hud-bars-wrapper">
+        <div class="hud-bars-inner">
+          <div class="hud-fill hp-fill" id="toolbar-hp-fill"></div>
+          <span class="hud-bar-text hp-text" id="toolbar-hp-text">0/0</span>
+          <div class="hud-fill xp-fill" id="toolbar-xp-fill"></div>
+          <span class="hud-bar-text xp-text" id="toolbar-xp-text">0/0</span>
+          <img src="assets/Bar.png" class="hud-frame" alt="" draggable="false" />
+          <div class="boost-meter ready" id="toolbar-boost-meter">
+            <div class="boost-meter-fill" id="toolbar-boost-fill"></div>
+            <span class="boost-meter-text" id="toolbar-boost-text">BOOST</span>
+          </div>
+        </div>
+      </div>
     </div>
-    <button id="logout-button">Logout</button>
-    <button id="stats-button">Stats</button>
-    <button id="debug-button">Debug Tools</button>
+    <div id="kill-feed" aria-live="polite" aria-atomic="false"></div>
+    <div id="top-toolbar">
+      <div class="toolbar-section toolbar-left">
+        <button id="logout-button" class="toolbar-btn toolbar-btn-danger">LOGOUT</button>
+        <button id="stats-button" class="toolbar-btn">STATS</button>
+      </div>
+      <div class="toolbar-section toolbar-center"></div>
+      <div class="toolbar-section toolbar-right">
+        <div class="music-controls">
+          <button type="button" class="toolbar-btn music-toggle-btn music-off" aria-pressed="false">MUSIC OFF</button>
+          <label class="music-volume-control">
+            <span>VOL</span>
+            <input type="range" class="music-volume-slider" min="0" max="100" step="1" value="2" aria-label="Music volume" />
+            <span class="music-volume-value">2%</span>
+          </label>
+          <label class="music-volume-control">
+            <span>SFX</span>
+            <input type="range" class="sfx-volume-slider" min="0" max="100" step="1" value="100" aria-label="SFX volume" />
+            <span class="sfx-volume-value">100%</span>
+          </label>
+        </div>
+        <button id="debug-button" class="toolbar-btn">DEBUG</button>
+      </div>
+    </div>
     <div id="stats-panel">
       <h3>Player Stats (DB)</h3>
       <div class="coord">Username: <span id="stats-username">-</span></div>
@@ -524,6 +931,172 @@
 
     <!-- Login handler -->
     <script src="login.js"></script>
+
+    <script>
+      (() => {
+        const theme = document.getElementById('main-theme');
+        if (!theme) return;
+
+        let musicVolume = 0.02;
+        const buttons = Array.from(document.querySelectorAll('.music-toggle-btn'));
+        const volumeSliders = Array.from(document.querySelectorAll('.music-volume-slider'));
+        const volumeValues = Array.from(document.querySelectorAll('.music-volume-value'));
+        let musicEnabled = false;
+
+        theme.volume = musicVolume;
+
+        const updateVolumeControls = () => {
+          const volumePercent = Math.round(musicVolume * 100);
+          volumeSliders.forEach((slider) => {
+            slider.value = String(volumePercent);
+          });
+          volumeValues.forEach((value) => {
+            value.textContent = `${volumePercent}%`;
+          });
+        };
+
+        const setMusicVolume = (value) => {
+          const volumePercent = Math.max(0, Math.min(100, Number(value) || 0));
+          musicVolume = volumePercent / 100;
+          theme.volume = musicVolume;
+          updateVolumeControls();
+        };
+
+        const updateButtons = () => {
+          const label = musicEnabled ? 'MUSIC ON' : 'MUSIC OFF';
+          buttons.forEach((button) => {
+            button.textContent = label;
+            button.classList.toggle('music-off', !musicEnabled);
+            button.setAttribute('aria-pressed', String(musicEnabled));
+            button.setAttribute('title', musicEnabled ? 'Turn music off' : 'Turn music on');
+          });
+        };
+
+        const playTheme = () => {
+          if (!musicEnabled) return;
+          theme.volume = musicVolume;
+          theme.play().catch(() => {});
+        };
+
+        const pauseTheme = () => {
+          theme.pause();
+        };
+
+        buttons.forEach((button) => {
+          button.addEventListener('click', () => {
+            musicEnabled = !musicEnabled;
+
+            if (musicEnabled) {
+              playTheme();
+            } else {
+              pauseTheme();
+            }
+
+            updateButtons();
+          });
+        });
+
+        volumeSliders.forEach((slider) => {
+          slider.addEventListener('input', (event) => {
+            setMusicVolume(event.target.value);
+            if (musicEnabled && theme.paused) {
+              playTheme();
+            }
+          });
+        });
+
+        updateVolumeControls();
+        updateButtons();
+        playTheme();
+
+        ['click', 'keydown', 'pointerdown', 'touchstart'].forEach((eventName) => {
+          window.addEventListener(eventName, playTheme, { once: true, passive: true });
+        });
+
+        document.addEventListener('visibilitychange', () => {
+          if (!document.hidden && theme.paused) {
+            playTheme();
+          }
+        });
+      })();
+    </script>
+
+    <script>
+      (() => {
+        const STORAGE_KEY = 'orbitfall.sfxVolume';
+        const sliders = Array.from(document.querySelectorAll('.sfx-volume-slider'));
+        const values = Array.from(document.querySelectorAll('.sfx-volume-value'));
+
+        const readStoredVolume = () => {
+          try {
+            const saved = window.localStorage.getItem(STORAGE_KEY);
+            if (saved === null) return 1;
+            return Math.max(0, Math.min(1, Number(saved)));
+          } catch (error) {
+            return 1;
+          }
+        };
+
+        let sfxVolume = readStoredVolume();
+
+        const updateSfxControls = () => {
+          const volumePercent = Math.round(sfxVolume * 100);
+          sliders.forEach((slider) => {
+            slider.value = String(volumePercent);
+          });
+          values.forEach((value) => {
+            value.textContent = `${volumePercent}%`;
+          });
+        };
+
+        window.getSfxVolume = () => sfxVolume;
+        window.setSfxVolume = (value) => {
+          const volumePercent = Math.max(0, Math.min(100, Number(value) || 0));
+          sfxVolume = volumePercent / 100;
+
+          try {
+            window.localStorage.setItem(STORAGE_KEY, String(sfxVolume));
+          } catch (error) {}
+
+          updateSfxControls();
+          window.dispatchEvent(new CustomEvent('sfxvolumechange', {
+            detail: { volume: sfxVolume }
+          }));
+        };
+
+        sliders.forEach((slider) => {
+          slider.addEventListener('input', (event) => {
+            window.setSfxVolume(event.target.value);
+          });
+        });
+
+        updateSfxControls();
+      })();
+    </script>
+
+    <script>
+      (() => {
+        const buttonSound = document.getElementById('button-press-sfx');
+        if (!buttonSound) return;
+
+        window.playButtonPressSound = () => {
+          const sound = buttonSound.cloneNode();
+          const volume = typeof window.getSfxVolume === 'function'
+            ? Math.max(0, Math.min(1, Number(window.getSfxVolume()) || 0))
+            : 1;
+
+          sound.volume = volume * 0.75;
+          sound.play().catch(() => {});
+        };
+
+        document.addEventListener('click', (event) => {
+          const target = event.target instanceof Element ? event.target : null;
+          const button = target ? target.closest('button, [role="button"]') : null;
+          if (!button || button.disabled || button.getAttribute('aria-disabled') === 'true') return;
+          window.playButtonPressSound();
+        });
+      })();
+    </script>
 
     <!-- ES6 modular architecture -->
     <script type="module" src="js/main.js"></script>

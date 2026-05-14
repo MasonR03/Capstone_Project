@@ -13,6 +13,7 @@ import uiManager from '../managers/UIManager.js';
 import ClientEntityManager from '../managers/ClientEntityManager.js';
 import ShootingStarRenderer from '../managers/ShootingStarRenderer.js';
 import BulletRenderer from '../managers/BulletRenderer.js';
+import AsteroidRenderer from '../managers/AsteroidRenderer.js';
 import {
   PLAYER_PROGRESS_DEFAULTS,
   cloneProgress
@@ -25,11 +26,23 @@ class GameScene extends Phaser.Scene {
     // Managers
     this.entityManager = null;
     this.bulletRenderer = null;
+    this.asteroidRenderer = null;
 
     // Client state
     this._lastShootTime = 0;
     this._lastClassLog = 0;
     this._cameraFollowSet = false;
+    this._lastLocalHp = null;
+    this._lastLocalMaxHp = null;
+    this._damageCueTimer = null;
+    this._damageTintTimer = null;
+    this._shipHitTintTimers = new Map();
+    this._boostCooldownMs = GameConfig.boost.cooldownMs;
+    this._boostCooldownUntil = 0;
+    this._lowHpWarningText = null;
+    this._lowHpWarningTween = null;
+    this._lowHpSound = null;
+    this._lowHpActive = false;
 
     // Progress
     this.playerProgress = cloneProgress(PLAYER_PROGRESS_DEFAULTS);
@@ -40,6 +53,8 @@ class GameScene extends Phaser.Scene {
 
     // Collectibles
     this.collectibleStars = null;
+    this.collectibleStarsById = new Map();
+    this._pendingStarCollects = new Map();
   }
 
      /**
@@ -87,12 +102,20 @@ class GameScene extends Phaser.Scene {
 
     // Backdrop
     this.load.image('backdrop', GameConfig.assets.backdrop);
+    this.load.image('collectible_star', GameConfig.assets.collectibleStar);
+    this.load.image('asteroid', GameConfig.assets.asteroid);
+    this.load.image('exploded_asteroid', GameConfig.assets.explodedAsteroid);
 
     // Bullet
     this.load.image('bullet', GameConfig.assets.bullet);
-
-    // HUD
-    this.load.image('hudBars', GameConfig.assets.hudBars);
+    this.load.audio('laser_fire', GameConfig.assets.laserSound);
+    this.load.audio('player_hit', GameConfig.assets.hitSound);
+    this.load.audio('low_hp', GameConfig.assets.lowHpSound);
+    this.load.audio('boost_fire', GameConfig.assets.boostSound);
+    this.load.audio('asteroid_boom', GameConfig.assets.asteroidBoom);
+    this.load.audio('weapon_hit', GameConfig.assets.weaponHitSound);
+    this.load.audio('level_up', GameConfig.assets.levelUpSound);
+    this.load.audio('star_collect', GameConfig.assets.starCollectSound);
 
     // Level menu
     this.load.image('menuIn', GameConfig.assets.menuIn);
@@ -137,12 +160,15 @@ class GameScene extends Phaser.Scene {
     this.bulletRenderer = new BulletRenderer(this, networkManager.getSocket());
     this.bulletRenderer.init();
 
+    this.asteroidRenderer = new AsteroidRenderer(this, networkManager.getSocket());
+    this.asteroidRenderer.init();
+
     // Borders
     this._addWorldBorders();
 
     // Camera
     this.cameras.main.centerOn(WORLD_W / 2, WORLD_H / 2);
-    this.cameras.main.setZoom(GameConfig.camera.initialZoom);
+    this.handleResize(this.sys.game.config.width, this.sys.game.config.height);
 
     // Managers
     this.entityManager = new ClientEntityManager(this);
@@ -188,14 +214,6 @@ class GameScene extends Phaser.Scene {
       immovable: true
     });
 
-    this.time.addEvent({
-      delay: 3000,
-      loop: true,
-      callback: () => {
-        this.spawnCollectibleStar();
-      }
-    });
-
     // Passive point gain
     this.time.addEvent({
       delay: 1000,
@@ -222,6 +240,9 @@ class GameScene extends Phaser.Scene {
    */
   update(time, delta) {
     this.shootingStars.update(delta);
+    if (this.asteroidRenderer) {
+      this.asteroidRenderer.update(delta);
+    }
 
     if (!gameState.isClassChosen()) return;
 
@@ -229,7 +250,19 @@ class GameScene extends Phaser.Scene {
 
     this._ensureCameraFollow();
 
+    const now = Date.now();
     const input = inputManager.getCurrentInput();
+    const localStats = gameState.getLocalPlayerStats();
+    const localShip = this.entityManager?.getLocalShip?.();
+    const canBoost = input.boost &&
+      !!localShip &&
+      now >= this._boostCooldownUntil &&
+      (localStats.hp ?? 1) > 0;
+
+    if (canBoost) {
+      this._boostCooldownUntil = now + this._boostCooldownMs;
+      this._playBoostSound();
+    }
 
     if (this.entityManager) {
       this.entityManager.applyLocalPrediction(input, dt);
@@ -237,15 +270,16 @@ class GameScene extends Phaser.Scene {
     }
 
     this._checkLocalStarCollection();
+    this._updateLowHpWarning();
 
     if (networkManager.isConnected()) {
       networkManager.emitPlayerInput(input);
 
       if (inputManager.isShootPressed()) {
-        const now = Date.now();
+        const shotNow = Date.now();
 
-        if (now - this._lastShootTime >= GameConfig.weapons.fireRate) {
-          this._lastShootTime = now;
+        if (shotNow - this._lastShootTime >= GameConfig.weapons.fireRate) {
+          this._lastShootTime = shotNow;
           networkManager.emitShoot();
         }
       }
@@ -254,7 +288,6 @@ class GameScene extends Phaser.Scene {
     // Sync progress changes to the server
     const latestProgress = gameState.getPlayerProgress();
     const progressJson = JSON.stringify(latestProgress);
-    const now = Date.now();
 
     if (
       progressJson !== this._lastProgressSync &&
@@ -269,12 +302,12 @@ class GameScene extends Phaser.Scene {
     const socketId = gameState.getSocketId();
     const minimapData = this.entityManager ? this.entityManager.getMinimapData() : {};
 
-    const starData = this.collectibleStars
-      ? this.collectibleStars.getChildren().map((star) => ({
-          x: star.x,
-          y: star.y
-        }))
-      : [];
+    const starData = Array.from(this.collectibleStarsById.values())
+      .filter((star) => star && star.active)
+      .map((star) => ({
+        x: star.x,
+        y: star.y
+      }));
 
     uiManager.updateMinimap({
       players: minimapData,
@@ -282,6 +315,7 @@ class GameScene extends Phaser.Scene {
       stars: starData
     });
 
+    this._updateBoostMeter();
     uiManager.tick(this.cameras.main);
   }
 
@@ -315,41 +349,90 @@ class GameScene extends Phaser.Scene {
   }
 
   /**
-   * Spawn a collectible star.
+   * Sync collectible stars from the authoritative server snapshot.
+   *
+   * @param {Array<Object>} stars
    */
-  spawnCollectibleStar() {
-    if (!this.collectibleStars) return;
+  syncCollectibleStars(stars = []) {
+    if (!Array.isArray(stars)) return;
 
-    const x = Phaser.Math.Between(100, GameConfig.world.width - 100);
-    const y = Phaser.Math.Between(100, GameConfig.world.height - 100);
+    const seen = new Set();
 
-    const star = this.collectibleStars.create(x, y, 'glow_particle');
-    if (!star) return;
+    stars.forEach((starData) => {
+      const star = this.spawnCollectibleStar(starData);
+      if (!star) return;
+      star.collectRequested = false;
+      seen.add(star.starId);
+    });
 
-    star.setScale(0.55);
-    star.setAlpha(0.9);
-    star.setDepth(2);
-
-    star.xpValue = 10;
-    star.pointValue = 1;
-
-    this.tweens.add({
-      targets: star,
-      alpha: 0.45,
-      scale: 0.42,
-      duration: 650,
-      yoyo: true,
-      repeat: -1
+    Array.from(this.collectibleStarsById.entries()).forEach(([starId, star]) => {
+      if (!seen.has(starId)) {
+        this._removeCollectibleStar(star, { playEffect: false });
+      }
     });
   }
 
   /**
-   * Check for local star collection.
+   * Render or update a server-owned collectible star.
+   *
+   * @param {Object} starData
+   * @returns {*}
+   */
+  spawnCollectibleStar(starData = {}) {
+    if (!this.collectibleStars) return null;
+
+    const starId = starData.id || starData.starId;
+    const x = Number(starData.x);
+    const y = Number(starData.y);
+    const defaultXpValue = GameConfig.collectibles?.stars?.defaultXpValue || 30;
+    const defaultPointValue = GameConfig.collectibles?.stars?.defaultPointValue || 1;
+
+    if (!starId || !Number.isFinite(x) || !Number.isFinite(y)) return null;
+
+    const existing = this.collectibleStarsById.get(starId);
+    if (existing && existing.active) {
+      existing.x = x;
+      existing.y = y;
+      existing.xpValue = Number.isFinite(starData.xpValue) ? starData.xpValue : existing.xpValue;
+      existing.pointValue = Number.isFinite(starData.pointValue) ? starData.pointValue : existing.pointValue;
+      return existing;
+    }
+
+    const textureKey = this.textures.exists('collectible_star')
+      ? 'collectible_star'
+      : 'glow_particle';
+    const star = this.collectibleStars.create(x, y, textureKey);
+    if (!star) return null;
+
+    star.starId = starId;
+    star.collectRequested = false;
+    star.xpValue = Number.isFinite(starData.xpValue) ? starData.xpValue : defaultXpValue;
+    star.pointValue = Number.isFinite(starData.pointValue) ? starData.pointValue : defaultPointValue;
+
+    star.setScale(0.9);
+    star.setAlpha(0.9);
+    star.setDepth(2);
+
+    star.collectibleTween = this.tweens.add({
+      targets: star,
+      alpha: 0.62,
+      scale: 0.72,
+      duration: 650,
+      yoyo: true,
+      repeat: -1
+    });
+
+    this.collectibleStarsById.set(starId, star);
+    return star;
+  }
+
+  /**
+   * Check whether the local player can request collection of a server star.
    *
    * @private
    */
   _checkLocalStarCollection() {
-    if (!this.entityManager || !this.collectibleStars) return;
+    if (!this.entityManager || !this.collectibleStars || !networkManager.isConnected()) return;
 
     const localShip = this.entityManager.getLocalShip
       ? this.entityManager.getLocalShip()
@@ -362,47 +445,167 @@ class GameScene extends Phaser.Scene {
 
     if (typeof localX !== 'number' || typeof localY !== 'number') return;
 
-    const stars = this.collectibleStars.getChildren();
+    const collectRadius = GameConfig.collectibles?.stars?.collectRadius || 40;
+    const stars = Array.from(this.collectibleStarsById.values());
 
     for (let i = 0; i < stars.length; i++) {
       const star = stars[i];
-      if (!star || !star.active) continue;
+      if (!star || !star.active || star.collectRequested) continue;
 
       const dist = Phaser.Math.Distance.Between(localX, localY, star.x, star.y);
-      if (dist <= 40) {
-        this.collectStar(star);
+      if (dist <= collectRadius) {
+        this._requestCollectibleStar(star);
       }
     }
   }
 
   /**
-   * Handle a collected star.
+   * Ask the server to collect a star.
    *
    * @param {*} star
+   * @private
    */
-  collectStar(star) {
+  _requestCollectibleStar(star) {
+    if (!star?.starId) return;
+
+    star.collectRequested = true;
+    networkManager.emitCollectibleStar(star.starId);
+
+    this._clearPendingStarCollect(star.starId);
+    const timer = this.time.delayedCall(800, () => {
+      this._pendingStarCollects.delete(star.starId);
+
+      const activeStar = this.collectibleStarsById.get(star.starId);
+      if (activeStar && activeStar.active) {
+        activeStar.collectRequested = false;
+      }
+    });
+
+    this._pendingStarCollects.set(star.starId, timer);
+  }
+
+  /**
+   * Handle a server-confirmed collected star.
+   *
+   * @param {*} star
+   * @param {Object} options
+   */
+  collectStar(star, options = {}) {
     if (!star || !star.active) return;
+
+    const defaultXpValue = GameConfig.collectibles?.stars?.defaultXpValue || 30;
+    const defaultPointValue = GameConfig.collectibles?.stars?.defaultPointValue || 1;
+    const xpValue = Number.isFinite(options.xpValue) ? options.xpValue : (star.xpValue || defaultXpValue);
+    const pointValue = Number.isFinite(options.pointValue) ? options.pointValue : (star.pointValue || defaultPointValue);
+    const grantRewards = !!options.grantRewards;
+
+    this._removeCollectibleStar(star, { playEffect: true });
+
+    if (grantRewards) {
+      this._grantCollectedStarRewards(xpValue, pointValue);
+    }
+  }
+
+  /**
+   * Remove one rendered collectible star.
+   *
+   * @param {*} star
+   * @param {Object} options
+   * @private
+   */
+  _removeCollectibleStar(star, options = {}) {
+    if (!star) return;
 
     const x = star.x;
     const y = star.y;
-    const xpValue = star.xpValue || 10;
-    const pointValue = star.pointValue || 1;
 
-    star.destroy();
-
-    if (uiManager.levelPanel) {
-      if (uiManager.levelPanel.gainXp) {
-        uiManager.levelPanel.gainXp(xpValue);
-      }
-
-      if (uiManager.levelPanel.addPoint) {
-        uiManager.levelPanel.addPoint(pointValue);
-      }
-
-      this.playerProgress = uiManager.getPlayerProgress();
-      gameState.setPlayerProgress(this.playerProgress);
+    if (star.starId) {
+      this._clearPendingStarCollect(star.starId);
+      this.collectibleStarsById.delete(star.starId);
     }
 
+    if (star.collectibleTween) {
+      star.collectibleTween.stop();
+      star.collectibleTween = null;
+    }
+
+    if (star.active && star.destroy) {
+      star.destroy();
+    }
+
+    if (options.playEffect) {
+      this._spawnStarCollectBurst(x, y);
+    }
+  }
+
+  /**
+   * Clear a pending local collection request.
+   *
+   * @param {string} starId
+   * @private
+   */
+  _clearPendingStarCollect(starId) {
+    const timer = this._pendingStarCollects.get(starId);
+    if (timer) {
+      timer.remove(false);
+    }
+    this._pendingStarCollects.delete(starId);
+  }
+
+  /**
+   * Add rewards for a local star collection.
+   *
+   * @param {number} xpValue
+   * @param {number} pointValue
+   * @private
+   */
+  _grantCollectedStarRewards(xpValue, pointValue) {
+    this._grantXpReward(xpValue, pointValue);
+  }
+
+  /**
+   * Add XP and optional points to the local player's active ship progress.
+   *
+   * @param {number} xpValue
+   * @param {number} pointValue
+   * @private
+   */
+  _grantXpReward(xpValue, pointValue = 0) {
+    if (!uiManager.levelPanel) return;
+
+    let upgradePointsGained = 0;
+
+    if (uiManager.levelPanel.gainXp) {
+      upgradePointsGained = uiManager.levelPanel.gainXp(xpValue) || 0;
+    }
+
+    if (pointValue > 0 && uiManager.levelPanel.addPoint) {
+      uiManager.levelPanel.addPoint(pointValue);
+    }
+
+    this.playerProgress = uiManager.getPlayerProgress();
+    gameState.setPlayerProgress(this.playerProgress);
+
+    if (upgradePointsGained > 0) {
+      this._spawnUpgradePointPopup(upgradePointsGained);
+      const activeShipKey =
+        this.playerProgress.selectedShip ||
+        gameState.getChosenClassKey() ||
+        GameConfig.defaultClass;
+      const activeLevel = this.playerProgress.shipProgress?.[activeShipKey]?.level;
+
+      networkManager.emitPlayerLevelUp(upgradePointsGained, activeLevel);
+    }
+  }
+
+  /**
+   * Spawn the collectible star pickup burst.
+   *
+   * @param {number} x
+   * @param {number} y
+   * @private
+   */
+  _spawnStarCollectBurst(x, y) {
     const particles = this.add.particles(x, y, 'glow_particle', {
       speed: { min: 20, max: 90 },
       scale: { start: 0.35, end: 0 },
@@ -413,6 +616,760 @@ class GameScene extends Phaser.Scene {
     this.time.delayedCall(450, () => {
       if (particles) particles.destroy();
     });
+  }
+
+  /**
+   * Get a good popup position above the local player.
+   *
+   * @returns {{x:number,y:number}}
+   * @private
+   */
+  _getLocalPlayerPopupPosition() {
+    const localShip = this.entityManager?.getLocalShip?.();
+    const sprite = localShip?.sprite;
+
+    if (sprite && sprite.active) {
+      return {
+        x: sprite.x,
+        y: sprite.y - 54
+      };
+    }
+
+    const position = localShip?.getPosition?.();
+    const fallbackX =
+      position?.x ??
+      localShip?.predicted?.x ??
+      localShip?.x ??
+      localShip?.serverState?.x;
+    const fallbackY =
+      position?.y ??
+      localShip?.predicted?.y ??
+      localShip?.y ??
+      localShip?.serverState?.y;
+
+    if (Number.isFinite(fallbackX) && Number.isFinite(fallbackY)) {
+      return {
+        x: fallbackX,
+        y: fallbackY - 54
+      };
+    }
+
+    const view = this.cameras?.main?.worldView;
+    return {
+      x: view ? view.centerX : GameConfig.world.width / 2,
+      y: view ? view.centerY : GameConfig.world.height / 2
+    };
+  }
+
+  /**
+   * Show upgrade-point feedback over the local player.
+   *
+   * @param {number} amount
+   * @private
+   */
+  _spawnUpgradePointPopup(amount = 1) {
+    const points = Math.max(1, Math.floor(Number(amount) || 1));
+    const position = this._getLocalPlayerPopupPosition();
+    const label = points === 1
+      ? '+1 UPGRADE POINT'
+      : `+${points} UPGRADE POINTS`;
+
+    const text = this.add.text(position.x, position.y, label, {
+      font: '14px Orbitron, sans-serif',
+      fill: '#66ffcc',
+      align: 'center',
+      stroke: '#001014',
+      strokeThickness: 4
+    });
+
+    text.setOrigin(0.5, 0.5);
+    text.setDepth(6);
+    text.setScale(0.88);
+
+    this.tweens.add({
+      targets: text,
+      y: position.y - 42,
+      alpha: { from: 1, to: 0 },
+      scale: { from: 0.88, to: 1.18 },
+      duration: 1050,
+      ease: 'Cubic.easeOut',
+      onComplete: () => text.destroy()
+    });
+  }
+
+  /**
+   * Position and volume-sync the low-HP warning while active.
+   *
+   * @private
+   */
+  _updateLowHpWarning() {
+    if (!this._lowHpActive) return;
+
+    const position = this._getLocalPlayerLowHpWarningPosition();
+
+    if (this._lowHpWarningText) {
+      this._lowHpWarningText.setPosition(position.x, position.y);
+    }
+
+    if (this._lowHpSound && this._lowHpSound.isPlaying && this._lowHpSound.setVolume) {
+      this._lowHpSound.setVolume(GameConfig.getSfxVolumeFor(0.68));
+    }
+  }
+
+  /**
+   * Update low-HP warning state from authoritative HP.
+   *
+   * @param {number} hp
+   * @private
+   */
+  _setLowHpWarningState(hp) {
+    const nextHp = Number(hp);
+    const threshold = GameConfig.warnings?.lowHpThreshold ?? 50;
+    const shouldWarn = Number.isFinite(nextHp) && nextHp < threshold;
+
+    if (shouldWarn === this._lowHpActive) {
+      if (shouldWarn) this._updateLowHpWarning();
+      return;
+    }
+
+    this._lowHpActive = shouldWarn;
+
+    if (shouldWarn) {
+      this._showLowHpWarning();
+      this._startLowHpSound();
+    } else {
+      this._hideLowHpWarning();
+      this._stopLowHpSound();
+    }
+  }
+
+  /**
+   * Create/show the low-HP warning text.
+   *
+   * @private
+   */
+  _showLowHpWarning() {
+    const position = this._getLocalPlayerLowHpWarningPosition();
+
+    if (!this._lowHpWarningText) {
+      this._lowHpWarningText = this.add.text(position.x, position.y, 'LOW HP - HULL BREACHED!', {
+        font: '13px Orbitron, sans-serif',
+        fill: '#ff3333',
+        align: 'center',
+        stroke: '#180000',
+        strokeThickness: 4
+      });
+
+      this._lowHpWarningText.setOrigin(0.5, 0.5);
+      this._lowHpWarningText.setDepth(7);
+
+      if (this._lowHpWarningText.setShadow) {
+        this._lowHpWarningText.setShadow(0, 0, '#ff0000', 12, true, true);
+      }
+    }
+
+    this._lowHpWarningText.setVisible(true);
+    this._lowHpWarningText.setAlpha(1);
+    this._lowHpWarningText.setScale(1);
+
+    if (this._lowHpWarningTween) {
+      this._lowHpWarningTween.stop();
+      this._lowHpWarningTween = null;
+    }
+
+    this._lowHpWarningTween = this.tweens.add({
+      targets: this._lowHpWarningText,
+      alpha: { from: 1, to: 0.48 },
+      scale: { from: 1, to: 1.08 },
+      duration: 520,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut'
+    });
+  }
+
+  /**
+   * Hide the low-HP warning text.
+   *
+   * @private
+   */
+  _hideLowHpWarning() {
+    if (this._lowHpWarningTween) {
+      this._lowHpWarningTween.stop();
+      this._lowHpWarningTween = null;
+    }
+
+    if (this._lowHpWarningText) {
+      this._lowHpWarningText.setVisible(false);
+    }
+  }
+
+  /**
+   * Get the warning position below the local player.
+   *
+   * @returns {{x:number,y:number}}
+   * @private
+   */
+  _getLocalPlayerLowHpWarningPosition() {
+    const localShip = this.entityManager?.getLocalShip?.();
+    const sprite = localShip?.sprite;
+    const offset = GameConfig.sprites.ship.height + 26;
+
+    if (sprite && sprite.active) {
+      return {
+        x: sprite.x,
+        y: sprite.y + offset
+      };
+    }
+
+    const position = localShip?.getPosition?.();
+    const fallbackX =
+      position?.x ??
+      localShip?.predicted?.x ??
+      localShip?.x ??
+      localShip?.serverState?.x;
+    const fallbackY =
+      position?.y ??
+      localShip?.predicted?.y ??
+      localShip?.y ??
+      localShip?.serverState?.y;
+
+    if (Number.isFinite(fallbackX) && Number.isFinite(fallbackY)) {
+      return {
+        x: fallbackX,
+        y: fallbackY + offset
+      };
+    }
+
+    const view = this.cameras?.main?.worldView;
+    return {
+      x: view ? view.centerX : GameConfig.world.width / 2,
+      y: view ? view.centerY + 40 : GameConfig.world.height / 2
+    };
+  }
+
+  /**
+   * Start the low-HP looping sound.
+   *
+   * @private
+   */
+  _startLowHpSound() {
+    if (!this.sound || !this.cache.audio.exists('low_hp')) return;
+
+    try {
+      if (!this._lowHpSound) {
+        this._lowHpSound = this.sound.add('low_hp', {
+          loop: true,
+          volume: GameConfig.getSfxVolumeFor(0.68)
+        });
+      }
+
+      if (this._lowHpSound.setVolume) {
+        this._lowHpSound.setVolume(GameConfig.getSfxVolumeFor(0.68));
+      }
+
+      if (!this._lowHpSound.isPlaying) {
+        this._lowHpSound.play();
+      }
+    } catch (error) {
+      // Audio playback can be blocked until the browser unlocks the sound context.
+    }
+  }
+
+  /**
+   * Stop the low-HP looping sound.
+   *
+   * @private
+   */
+  _stopLowHpSound() {
+    try {
+      if (this._lowHpSound && this._lowHpSound.isPlaying) {
+        this._lowHpSound.stop();
+      }
+    } catch (error) {}
+  }
+
+  /**
+   * Track authoritative local HP and play feedback when it drops.
+   *
+   * @param {Object} serverState
+   * @private
+   */
+  _trackLocalDamage(serverState) {
+    const nextHp = Number(serverState.hp);
+    const nextMaxHp = Number(serverState.maxHp);
+    const prevHp = this._lastLocalHp;
+    const prevMaxHp = this._lastLocalMaxHp;
+    const hasHp = Number.isFinite(nextHp);
+    const hasMaxHp = Number.isFinite(nextMaxHp);
+
+    if (hasHp) {
+      const hasPreviousHp = Number.isFinite(prevHp);
+      const maxHpChanged = Number.isFinite(prevMaxHp) && hasMaxHp && prevMaxHp !== nextMaxHp;
+      const damageAmount = prevHp - nextHp;
+
+      if (hasPreviousHp && !maxHpChanged && damageAmount > 0) {
+        this._playDamageCue(damageAmount, hasMaxHp ? nextMaxHp : prevMaxHp);
+      }
+
+      if (hasHp) {
+        this._setLowHpWarningState(nextHp);
+      }
+
+      this._lastLocalHp = nextHp;
+    }
+
+    if (hasMaxHp) {
+      this._lastLocalMaxHp = nextMaxHp;
+    }
+  }
+
+  /**
+   * Track authoritative boost recharge for the local HUD.
+   *
+   * @param {Object} serverState
+   * @private
+   */
+  _trackLocalBoost(serverState) {
+    if (Number.isFinite(serverState.boostCooldownMs)) {
+      this._boostCooldownMs = serverState.boostCooldownMs;
+    }
+
+    if (Number.isFinite(serverState.boostCooldownRemainingMs)) {
+      this._boostCooldownUntil = Date.now() + Math.max(0, serverState.boostCooldownRemainingMs);
+    }
+  }
+
+  /**
+   * Update the boost recharge meter.
+   *
+   * @private
+   */
+  _updateBoostMeter() {
+    const remainingMs = Math.max(0, this._boostCooldownUntil - Date.now());
+
+    uiManager.updateBoost({
+      remainingMs,
+      cooldownMs: this._boostCooldownMs
+    });
+  }
+
+  /**
+   * Play local damage feedback.
+   *
+   * @param {number} damageAmount
+   * @param {number} maxHp
+   * @private
+   */
+  _playDamageCue(damageAmount, maxHp) {
+    const safeMaxHp = Number.isFinite(maxHp) && maxHp > 0 ? maxHp : 100;
+    const relativeDamage = Math.max(0, damageAmount / safeMaxHp);
+    const severity = Phaser.Math.Clamp(0.55 + relativeDamage * 3, 0.65, 1);
+    const shakeIntensity = Phaser.Math.Clamp(0.004 + relativeDamage * 0.02, 0.005, 0.018);
+
+    const vignette = typeof document !== 'undefined'
+      ? document.getElementById('damage-vignette')
+      : null;
+
+    if (vignette) {
+      vignette.style.setProperty('--damage-cue-strength', severity.toFixed(2));
+      vignette.classList.remove('active');
+      void vignette.offsetWidth;
+      vignette.classList.add('active');
+
+      if (this._damageCueTimer) {
+        window.clearTimeout(this._damageCueTimer);
+      }
+
+      this._damageCueTimer = window.setTimeout(() => {
+        vignette.classList.remove('active');
+        this._damageCueTimer = null;
+      }, 430);
+    }
+
+    if (this.cameras?.main?.shake) {
+      this.cameras.main.shake(140, shakeIntensity, true);
+    }
+
+    this._playHitSound(severity);
+    this._flashLocalShip();
+  }
+
+  /**
+   * Play the local damage sound.
+   *
+   * @param {number} severity
+   * @private
+   */
+  _playHitSound(severity = 1) {
+    if (!this.sound || !this.cache.audio.exists('player_hit')) return;
+
+    try {
+      this.sound.play('player_hit', {
+        volume: GameConfig.getSfxVolumeFor(Phaser.Math.Clamp(0.45 + severity * 0.25, 0.45, 0.7))
+      });
+    } catch (error) {
+      // Audio playback can be blocked until the browser unlocks the sound context.
+    }
+  }
+
+  /**
+   * Play the local boost ignition sound.
+   *
+   * @private
+   */
+  _playBoostSound() {
+    if (!this.sound || !this.cache.audio.exists('boost_fire')) return;
+
+    try {
+      this.sound.play('boost_fire', {
+        volume: GameConfig.getSfxVolumeFor(0.55)
+      });
+    } catch (error) {
+      // Audio playback can be blocked until the browser unlocks the sound context.
+    }
+  }
+
+  /**
+   * Play local level-up feedback.
+   *
+   * @private
+   */
+  _playLevelUpSound() {
+    if (!this.sound || !this.cache.audio.exists('level_up')) return;
+
+    try {
+      this.sound.play('level_up', {
+        volume: GameConfig.getSfxVolumeFor(0.75)
+      });
+    } catch (error) {
+      // Audio playback can be blocked until the browser unlocks the sound context.
+    }
+  }
+
+  /**
+   * Play local star collection feedback.
+   *
+   * @private
+   */
+  _playStarCollectSound() {
+    if (!this.sound || !this.cache.audio.exists('star_collect')) return;
+
+    try {
+      this.sound.play('star_collect', {
+        volume: GameConfig.getSfxVolumeFor(0.65)
+      });
+    } catch (error) {
+      // Audio playback can be blocked until the browser unlocks the sound context.
+    }
+  }
+
+  /**
+   * Briefly tint the local ship red without changing its death/respawn alpha.
+   *
+   * @private
+   */
+  _flashLocalShip() {
+    const localShip = this.entityManager?.getLocalShip?.();
+    const sprite = localShip?.sprite;
+    if (!sprite || !sprite.active) return;
+
+    sprite.setTint(0xff6666);
+
+    if (this._damageTintTimer) {
+      this._damageTintTimer.remove(false);
+    }
+
+    this._damageTintTimer = this.time.delayedCall(160, () => {
+      if (sprite.active && sprite.clearTint) {
+        sprite.clearTint();
+      }
+      this._damageTintTimer = null;
+    });
+  }
+
+  /**
+   * Play visible feedback on a ship that took bullet damage.
+   *
+   * @param {Object} data
+   * @private
+   */
+  _playShipHitCue(data) {
+    const shipId = data?.shipId;
+    if (!shipId || !this.entityManager) return;
+    if (this.entityManager.isLocalPlayer(shipId)) return;
+
+    const ship = this.entityManager.getShip(shipId);
+    const sprite = ship?.sprite;
+    if (!ship || !sprite || !sprite.active) return;
+
+    this._flashHitShip(shipId, sprite);
+    this._spawnDamageNumber(ship, data.damage, data.killed);
+  }
+
+  /**
+   * Play hit confirmation audio for the attacking player.
+   *
+   * @param {Object} data
+   * @private
+   */
+  _playWeaponHitSound(data) {
+    const ownerId = data?.ownerId;
+    if (!ownerId || !this.entityManager?.isLocalPlayer?.(ownerId)) return;
+    if (!this.sound || !this.cache.audio.exists('weapon_hit')) return;
+
+    try {
+      this.sound.play('weapon_hit', {
+        volume: GameConfig.getSfxVolumeFor(0.5)
+      });
+    } catch (error) {
+      // Audio playback can be blocked until the browser unlocks the sound context.
+    }
+  }
+
+  /**
+   * Briefly tint a remote ship so attackers can confirm the hit.
+   *
+   * @param {string} shipId
+   * @param {*} sprite
+   * @private
+   */
+  _flashHitShip(shipId, sprite) {
+    sprite.setTint(0xff4f4f);
+
+    const existingTimer = this._shipHitTintTimers.get(shipId);
+    if (existingTimer) {
+      existingTimer.remove(false);
+    }
+
+    const timer = this.time.delayedCall(140, () => {
+      if (sprite.active && sprite.clearTint) {
+        sprite.clearTint();
+      }
+      this._shipHitTintTimers.delete(shipId);
+    });
+
+    this._shipHitTintTimers.set(shipId, timer);
+  }
+
+  /**
+   * Float damage text above a hit ship.
+   *
+   * @param {*} ship
+   * @param {number} damage
+   * @param {boolean} killed
+   * @private
+   */
+  _spawnDamageNumber(ship, damage, killed) {
+    const sprite = ship.sprite;
+    const x = sprite?.x ?? ship.x ?? 0;
+    const y = (sprite?.y ?? ship.y ?? 0) - 34;
+    const amount = Math.max(0, Math.floor(Number(damage) || 0));
+    const label = killed ? 'DESTROYED' : `-${amount}`;
+
+    const text = this.add.text(x, y, label, {
+      font: killed ? '13px Orbitron, sans-serif' : '18px Orbitron, sans-serif',
+      fill: killed ? '#ffdd66' : '#ff6666',
+      align: 'center',
+      stroke: '#000000',
+      strokeThickness: 3
+    });
+
+    text.setOrigin(0.5, 0.5);
+    text.setDepth(4);
+
+    this.tweens.add({
+      targets: text,
+      y: y - 30,
+      alpha: { from: 1, to: 0 },
+      scale: { from: killed ? 1.05 : 1, to: killed ? 1.3 : 1.18 },
+      duration: killed ? 760 : 520,
+      ease: 'Cubic.easeOut',
+      onComplete: () => text.destroy()
+    });
+  }
+
+  /**
+   * Resolve a player id into a readable kill feed name.
+   *
+   * @param {string} playerId
+   * @returns {string}
+   * @private
+   */
+  _getKillFeedName(playerId) {
+    if (!playerId) return 'Unknown Pilot';
+
+    const ship = this.entityManager?.getShip?.(playerId);
+    const displayName =
+      ship?.getDisplayName?.() ||
+      ship?.playerName ||
+      ship?.name ||
+      ship?.serverState?.playerName ||
+      ship?.serverState?.username ||
+      ship?.serverState?.name;
+
+    if (typeof displayName === 'string' && displayName.trim()) {
+      return displayName.trim();
+    }
+
+    const shortId = String(playerId).slice(0, 6);
+    return `Pilot ${shortId}`;
+  }
+
+  /**
+   * Show a viewport-pinned kill feed entry.
+   *
+   * @param {Object} data
+   * @private
+   */
+  _showKillFeedEntry(data) {
+    const feed = typeof document !== 'undefined'
+      ? document.getElementById('kill-feed')
+      : null;
+
+    if (!feed || !data?.victimId) return;
+
+    const entry = document.createElement('div');
+    const victimName = this._getKillFeedName(data.victimId);
+    const killerName = data.killerId ? this._getKillFeedName(data.killerId) : '';
+
+    const addPart = (className, text) => {
+      const span = document.createElement('span');
+      if (className) span.className = className;
+      span.textContent = text;
+      entry.appendChild(span);
+    };
+
+    if (data.killerId && data.killerId !== data.victimId) {
+      entry.className = 'kill-feed-entry';
+      addPart('killer', killerName);
+      addPart('verb', ' eliminated ');
+      addPart('victim', victimName);
+    } else {
+      entry.className = 'kill-feed-entry environment';
+      addPart('victim', victimName);
+      addPart('verb', data.cause === 'asteroid' ? ' was crushed by an asteroid' : ' hit a wall');
+    }
+
+    feed.prepend(entry);
+
+    while (feed.children.length > 5) {
+      feed.lastElementChild.remove();
+    }
+
+    window.setTimeout(() => {
+      entry.remove();
+    }, 5400);
+  }
+
+  /**
+   * Show a level-up entry in the viewport-pinned kill feed.
+   *
+   * @param {Object} data
+   * @private
+   */
+  _showLevelUpFeedEntry(data) {
+    const feed = typeof document !== 'undefined'
+      ? document.getElementById('kill-feed')
+      : null;
+
+    if (!feed || !data?.playerId) return;
+
+    const entry = document.createElement('div');
+    const playerName =
+      (typeof data.playerName === 'string' && data.playerName.trim())
+        ? data.playerName.trim()
+        : this._getKillFeedName(data.playerId);
+    const pointsGained = Math.max(1, Math.floor(Number(data.pointsGained) || 1));
+
+    const addPart = (className, text) => {
+      const span = document.createElement('span');
+      if (className) span.className = className;
+      span.textContent = text;
+      entry.appendChild(span);
+    };
+
+    entry.className = 'kill-feed-entry level-up';
+    addPart('level-player', playerName);
+    addPart('verb', ' leveled up ');
+    addPart(
+      'level-points',
+      pointsGained === 1
+        ? '(+1 upgrade point)'
+        : `(+${pointsGained} upgrade points)`
+    );
+
+    feed.prepend(entry);
+
+    while (feed.children.length > 5) {
+      feed.lastElementChild.remove();
+    }
+
+    window.setTimeout(() => {
+      entry.remove();
+    }, 5400);
+  }
+
+  /**
+   * Show asteroid destruction in the viewport-pinned kill feed.
+   *
+   * @param {Object} data
+   * @private
+   */
+  _showAsteroidDestroyedFeedEntry(data) {
+    const feed = typeof document !== 'undefined'
+      ? document.getElementById('kill-feed')
+      : null;
+
+    if (!feed || !data?.ownerId) return;
+
+    const entry = document.createElement('div');
+    const playerName = this._getKillFeedName(data.ownerId);
+    const xpValue = Math.max(0, Math.floor(Number(data.xpValue) || GameConfig.asteroids.xpValue || 200));
+
+    const addPart = (className, text) => {
+      const span = document.createElement('span');
+      if (className) span.className = className;
+      span.textContent = text;
+      entry.appendChild(span);
+    };
+
+    entry.className = 'kill-feed-entry environment';
+    addPart('killer', playerName);
+    addPart('verb', ' destroyed an asteroid ');
+    addPart('level-points', `(+${xpValue} XP)`);
+
+    feed.prepend(entry);
+
+    while (feed.children.length > 5) {
+      feed.lastElementChild.remove();
+    }
+
+    window.setTimeout(() => {
+      entry.remove();
+    }, 5400);
+  }
+
+  /**
+   * Show a temporary top-screen kill streak banner.
+   *
+   * @param {Object} data
+   * @private
+   */
+  _showKillStreakBanner(data) {
+    const overlay = typeof document !== 'undefined'
+      ? document.getElementById('title-overlay')
+      : null;
+
+    if (!overlay) return;
+
+    const message = typeof data?.message === 'string' ? data.message.trim() : '';
+    if (!message) return;
+
+    overlay.textContent = message.toUpperCase();
+    overlay.classList.remove('active');
+    void overlay.offsetWidth;
+    overlay.classList.add('active');
   }
 
   /**
@@ -437,6 +1394,14 @@ class GameScene extends Phaser.Scene {
         this.entityManager.addOrUpdateShip(players[id]);
       });
 
+      const localState = socketId ? players[socketId] : null;
+      if (localState) {
+        this._lastLocalHp = localState.hp;
+        this._lastLocalMaxHp = localState.maxHp;
+        this._setLowHpWarningState(localState.hp);
+        this._trackLocalBoost(localState);
+      }
+
       this._ensureCameraFollow();
     });
 
@@ -448,7 +1413,88 @@ class GameScene extends Phaser.Scene {
       this.entityManager.removeShip(playerId);
     });
 
+    socket.on('collectibleStarsSnapshot', (stars) => {
+      this.syncCollectibleStars(stars);
+    });
+
+    socket.on('collectibleStarSpawned', (starData) => {
+      this.spawnCollectibleStar(starData);
+    });
+
+    socket.on('collectibleStarCollected', (data) => {
+      const star = this.collectibleStarsById.get(data?.starId);
+      const grantRewards = this.entityManager?.isLocalPlayer?.(data?.collectorId);
+
+      if (grantRewards) {
+        this._playStarCollectSound();
+      }
+
+      if (star) {
+        this.collectStar(star, {
+          grantRewards,
+          xpValue: data?.xpValue,
+          pointValue: data?.pointValue
+        });
+      } else if (grantRewards) {
+        this._grantCollectedStarRewards(
+          data?.xpValue || GameConfig.collectibles?.stars?.defaultXpValue || 30,
+          data?.pointValue || GameConfig.collectibles?.stars?.defaultPointValue || 1
+        );
+      }
+    });
+
+    socket.on('bulletHit', (data) => {
+      this._playShipHitCue(data);
+      this._playWeaponHitSound(data);
+    });
+
+    socket.on('playerLeveledUp', (data) => {
+      this._showLevelUpFeedEntry(data);
+
+      const leveledShip = this.entityManager?.getShip?.(data?.playerId);
+      if (leveledShip && Number.isFinite(Number(data?.shipLevel)) && leveledShip.setShipLevel) {
+        leveledShip.setShipLevel(data.shipLevel);
+      }
+
+      if (this.entityManager?.isLocalPlayer?.(data?.playerId)) {
+        this._playLevelUpSound();
+
+        if (Number.isFinite(data?.hp) && Number.isFinite(data?.maxHp)) {
+          this._lastLocalHp = data.hp;
+          this._lastLocalMaxHp = data.maxHp;
+          this._setLowHpWarningState(data.hp);
+          gameState.updateLocalPlayerStats({
+            hp: data.hp,
+            maxHp: data.maxHp
+          });
+          uiManager.updateHpXp(gameState.getLocalPlayerStats());
+        }
+      }
+    });
+
+    socket.on('killStreak', (data) => {
+      this._showKillStreakBanner(data);
+    });
+
+    socket.on('asteroidDestroyed', (data) => {
+      this._showAsteroidDestroyedFeedEntry(data);
+
+      if (this.entityManager?.isLocalPlayer?.(data?.ownerId)) {
+        this._grantXpReward(data?.xpValue || GameConfig.asteroids.xpValue || 200);
+      }
+    });
+
     socket.on('playerKilled', (data) => {
+      this._showKillFeedEntry(data);
+
+      if (
+        data?.killerId &&
+        data.killerId !== data.victimId &&
+        this.entityManager?.isLocalPlayer?.(data.killerId)
+      ) {
+        this._grantXpReward(GameConfig.rewards?.playerEliminationXp || 100);
+      }
+
       const ship = this.entityManager.getShip(data.victimId);
       if (ship && ship.sprite) {
         ship.sprite.setAlpha(0.3);
@@ -472,6 +1518,12 @@ class GameScene extends Phaser.Scene {
           ship.predicted.y = data.y;
           ship.predicted.vx = 0;
           ship.predicted.vy = 0;
+          this._lastLocalHp = data.hp;
+          this._lastLocalMaxHp = data.maxHp;
+          this._setLowHpWarningState(data.hp);
+          this._boostCooldownUntil = 0;
+          networkManager.emitRequestCollectibleStars();
+          networkManager.emitRequestAsteroids();
         }
       }
     });
@@ -486,6 +1538,9 @@ class GameScene extends Phaser.Scene {
 
       this.entityManager.processServerUpdate(serverPlayers, {
         onLocalPlayerUpdate: (serverState) => {
+          this._trackLocalDamage(serverState);
+          this._trackLocalBoost(serverState);
+
           gameState.updateLocalPlayerStats({
             hp: serverState.hp,
             maxHp: serverState.maxHp,
@@ -505,6 +1560,19 @@ class GameScene extends Phaser.Scene {
 
       this._ensureCameraFollow();
     });
+
+    if (networkManager.isConnected()) {
+      networkManager.emitRequestCollectibleStars();
+      networkManager.emitRequestAsteroids();
+    }
+  }
+
+  handleResize(width, height) {
+    const cam = this.cameras.main;
+    const zoomX = width / GameConfig.camera.baseWidth;
+    const zoomY = height / GameConfig.camera.baseHeight;
+    cam.setSize(width, height);
+    cam.setZoom(Math.max(zoomX, zoomY));
   }
 
   /**

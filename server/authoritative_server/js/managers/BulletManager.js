@@ -133,6 +133,23 @@ class BulletManager {
   }
 
   /**
+   * Remove a bullet by id.
+   * @param {string} id
+   * @returns {boolean}
+   */
+  remove(id) {
+    return this.bullets.delete(id);
+  }
+
+  /**
+   * Iterate active bullets.
+   * @param {Function} callback
+   */
+  forEach(callback) {
+    this.bullets.forEach(callback);
+  }
+
+  /**
    * Serialize all bullets for network broadcast
    * @returns {Array}
    */

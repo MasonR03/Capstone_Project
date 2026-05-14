@@ -172,7 +172,8 @@ class NetworkManager {
       left: !!input.left,
       right: !!input.right,
       up: !!input.up,
-      down: !!input.down
+      down: !!input.down,
+      boost: !!input.boost
     });
   }
 
@@ -181,6 +182,48 @@ class NetworkManager {
    */
   emitShoot() {
     this.emit('playerShoot');
+  }
+
+  /**
+   * Request the current authoritative collectible star list.
+   */
+  emitRequestCollectibleStars() {
+    this.emit('requestCollectibleStars');
+  }
+
+  /**
+   * Request the current authoritative asteroid list.
+   */
+  emitRequestAsteroids() {
+    this.emit('requestAsteroids');
+  }
+
+  /**
+   * Request collection of an authoritative collectible star.
+   *
+   * @param {string} starId
+   */
+  emitCollectibleStar(starId) {
+    if (!starId) return;
+    this.emit('collectCollectibleStar', { starId });
+  }
+
+  /**
+   * Notify the server that the local player gained upgrade points.
+   *
+   * @param {number} pointsGained
+   * @param {number|null} level
+   */
+  emitPlayerLevelUp(pointsGained = 1, level = null) {
+    const safePoints = Math.max(1, Math.floor(Number(pointsGained) || 1));
+    const safeLevel = Number.isFinite(Number(level))
+      ? Math.max(1, Math.floor(Number(level)))
+      : null;
+
+    this.emit('playerLevelUp', {
+      pointsGained: safePoints,
+      level: safeLevel
+    });
   }
 
   /**

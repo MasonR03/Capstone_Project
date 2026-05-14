@@ -12,6 +12,10 @@ class InputManager {
     this.enabled = false;
     this._fullscreenKey = null;
     this._shootKey = null;
+    this._boostDown = false;
+    this._boostPressed = false;
+    this._boostKeyDownHandler = null;
+    this._boostKeyUpHandler = null;
     this.shootPressed = false;
   }
 
@@ -40,15 +44,23 @@ class InputManager {
 
     // Shoot key (spacebar)
     this._shootKey = scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
-
-    // Fullscreen toggle
-    this._fullscreenKey = scene.input.keyboard.on('keydown-F', () => {
-      if (scene.scale.isFullscreen) {
-        scene.scale.stopFullscreen();
-      } else {
-        scene.scale.startFullscreen();
+    this._boostKeyDownHandler = (event) => {
+      if (event.code !== 'ControlLeft') return;
+      if (!this._boostDown) {
+        this._boostPressed = true;
       }
-    });
+      this._boostDown = true;
+      event.preventDefault();
+    };
+
+    this._boostKeyUpHandler = (event) => {
+      if (event.code !== 'ControlLeft') return;
+      this._boostDown = false;
+      event.preventDefault();
+    };
+
+    scene.input.keyboard.on('keydown', this._boostKeyDownHandler);
+    scene.input.keyboard.on('keyup', this._boostKeyUpHandler);
 
     console.log('InputManager initialized');
   }
@@ -57,6 +69,7 @@ class InputManager {
    * Enable input handling
    */
   enable() {
+    this._boostPressed = false;
     this.enabled = true;
   }
 
@@ -80,14 +93,19 @@ class InputManager {
    */
   getCurrentInput() {
     if (!this.enabled || !this.cursors) {
-      return { left: false, right: false, up: false, down: false };
+      this._boostPressed = false;
+      return { left: false, right: false, up: false, down: false, boost: false };
     }
+
+    const boost = this._boostPressed;
+    this._boostPressed = false;
 
     return {
       left: !!this.cursors.left.isDown || !!this.wasd.left.isDown,
       right: !!this.cursors.right.isDown || !!this.wasd.right.isDown,
       up: !!this.cursors.up.isDown || !!this.wasd.up.isDown,
-      down: !!this.cursors.down.isDown || !!this.wasd.down.isDown
+      down: !!this.cursors.down.isDown || !!this.wasd.down.isDown,
+      boost
     };
   }
 
@@ -177,10 +195,20 @@ class InputManager {
   destroy() {
     if (this.scene && this.scene.input && this.scene.input.keyboard) {
       this.scene.input.keyboard.off('keydown-F');
+      if (this._boostKeyDownHandler) {
+        this.scene.input.keyboard.off('keydown', this._boostKeyDownHandler);
+      }
+      if (this._boostKeyUpHandler) {
+        this.scene.input.keyboard.off('keyup', this._boostKeyUpHandler);
+      }
     }
     this.cursors = null;
     this.wasd = null;
     this._shootKey = null;
+    this._boostKeyDownHandler = null;
+    this._boostKeyUpHandler = null;
+    this._boostDown = false;
+    this._boostPressed = false;
     this.scene = null;
     this.enabled = false;
   }

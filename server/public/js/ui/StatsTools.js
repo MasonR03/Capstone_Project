@@ -32,6 +32,13 @@ class StatsTools {
       return;
     }
 
+    if (window.isGuest) {
+      this.statsButton.style.display = 'none';
+      this.statsPanel.style.display = 'none';
+      localStorage.setItem('statsPanelVisible', 'false');
+      return;
+    }
+
     this.elements = {
       username: document.getElementById('stats-username'),
       email: document.getElementById('stats-email'),
@@ -44,7 +51,7 @@ class StatsTools {
       status: document.getElementById('stats-status')
     };
 
-    this.statsButton.style.display = 'block';
+    // Button visibility is managed by the toolbar container
 
     const savedState = localStorage.getItem('statsPanelVisible');
     if (savedState === 'true') {

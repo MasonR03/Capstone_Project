@@ -11,6 +11,7 @@ document.addEventListener('DOMContentLoaded', async function () {
 
   const loginForm = document.getElementById('login-form');
   const signupForm = document.getElementById('signup-form');
+  const guestForm = document.getElementById('guest-form');
 
   // --- Tab switching ---
   tabs.forEach((tab) => {
@@ -30,12 +31,17 @@ document.addEventListener('DOMContentLoaded', async function () {
 
   const logoutButton = document.getElementById('logout-button');
 
-  function enterGame(username) {
+  function enterGame(username, isGuest = false) {
     playerName = username;
     window.playerName = username;
+    window.isGuest = isGuest;
     window.loginComplete = true;
     loginOverlay.classList.add('hidden');
-    logoutButton.style.display = 'block';
+    document.getElementById('top-toolbar').classList.add('visible');
+    const statsButton = document.getElementById('stats-button');
+    if (statsButton) statsButton.style.display = isGuest ? 'none' : '';
+    const hudBars = document.getElementById('hud-bars');
+    if (hudBars) hudBars.classList.add('visible');
     console.log('👤 Player logged in as:', username);
   }
 
@@ -55,7 +61,7 @@ document.addEventListener('DOMContentLoaded', async function () {
     if (res.ok) {
       const data = await res.json();
       if (data.username) {
-        enterGame(data.username);
+        enterGame(data.username, Boolean(data.isGuest));
         return;
       }
     }
@@ -123,7 +129,7 @@ document.addEventListener('DOMContentLoaded', async function () {
         showError(data.error || 'Login failed.');
         return;
       }
-      enterGame(data.username);
+      enterGame(data.username, Boolean(data.isGuest));
     } catch (err) {
       showError('Could not reach server.');
     }
@@ -167,7 +173,36 @@ document.addEventListener('DOMContentLoaded', async function () {
         showError(data.error || 'Signup failed.');
         return;
       }
-      enterGame(data.username);
+      enterGame(data.username, Boolean(data.isGuest));
+    } catch (err) {
+      showError('Could not reach server.');
+    }
+  });
+
+  // --- Guest form ---
+  guestForm.addEventListener('submit', async function (e) {
+    e.preventDefault();
+    authError.textContent = '';
+
+    const username = document.getElementById('guest-username').value.trim();
+
+    if (!username) {
+      showError('Choose a gamer tag to play as guest.');
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/guest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        showError(data.error || 'Could not start guest session.');
+        return;
+      }
+      enterGame(data.username, true);
     } catch (err) {
       showError('Could not reach server.');
     }

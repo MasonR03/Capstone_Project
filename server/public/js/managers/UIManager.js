@@ -7,7 +7,7 @@
 
 import GameConfig from '../config/GameConfig.js';
 import gameState from './GameStateManager.js';
-import HUD from '../ui/HUD.js';
+import Toolbar from '../ui/Toolbar.js';
 import LevelPanel from '../ui/LevelPanel.js';
 import Minimap from '../ui/minimap.js';
 import { ClassPicker } from '../ui/ClassPicker.js';
@@ -24,7 +24,7 @@ class UIManager {
     this.game = null;
 
     // UI components
-    this.hud = null;
+    this.toolbar = null;
     this.minimap = null;
     this.levelPanel = null;
     this.classPicker = null;
@@ -59,12 +59,8 @@ class UIManager {
       this.progress = cloneProgress(options.progress);
     }
 
-    // Create HUD
-    if (typeof HUD === 'function') {
-      this.hud = new HUD(scene);
-    } else {
-      console.error('UIManager: HUD is not a constructor');
-    }
+    // Create Toolbar (DOM-based, replaces Phaser HUD)
+    this.toolbar = new Toolbar();
 
     // Create Minimap
     if (typeof Minimap === 'function') {
@@ -83,6 +79,7 @@ class UIManager {
     if (typeof LevelPanel === 'function') {
       this.levelPanel = new LevelPanel(scene, {
         progress: this.progress,
+
         onChange: (progress) => {
           this.progress = cloneProgress(progress);
           gameState.setPlayerProgress(this.progress);
@@ -96,6 +93,37 @@ class UIManager {
           }
 
           this._syncHudWithState();
+        },
+
+        onRequestShipPicker: () => {
+          this.openClassPicker((classKey) => {
+            const unlockedShips = this.progress?.unlockedShips || [];
+
+            if (!unlockedShips.includes(classKey)) {
+              return;
+            }
+
+            this.progress.selectedShip = classKey;
+            gameState.setClassChoice(classKey);
+            gameState.setPlayerProgress(this.progress);
+
+            if (this.levelPanel) {
+              this.levelPanel.setProgress(this.progress);
+            }
+
+            this._syncHudWithState();
+
+            // If your scene already has a respawn/swap method, use it automatically:
+            if (this.scene && typeof this.scene.respawnLocalPlayerAsSelectedShip === 'function') {
+              this.scene.respawnLocalPlayerAsSelectedShip(classKey);
+            } else if (this.scene && typeof this.scene.respawnLocalPlayer === 'function') {
+              this.scene.respawnLocalPlayer();
+            } else if (this.scene && typeof this.scene.recreateLocalPlayerShip === 'function') {
+              this.scene.recreateLocalPlayerShip(classKey);
+            }
+          }, {
+            progress: this.progress
+          });
         }
       });
     } else {
@@ -153,8 +181,8 @@ class UIManager {
     const maxHp = stats?.maxHp ?? 0;
     const activeShipProgress = this._getActiveShipProgress();
 
-    if (this.hud) {
-      this.hud.updateHpXp({
+    if (this.toolbar) {
+      this.toolbar.updateHpXp({
         hp,
         maxHp,
         xp: activeShipProgress.xp ?? 0,
@@ -171,6 +199,17 @@ class UIManager {
   updateMinimap(data) {
     if (this.minimap) {
       this.minimap.update(data.players, data.myId, data.stars || []);
+    }
+  }
+
+  /**
+   * Update boost recharge meter.
+   *
+   * @param {Object} data
+   */
+  updateBoost(data) {
+    if (this.toolbar && this.toolbar.updateBoost) {
+      this.toolbar.updateBoost(data);
     }
   }
 
@@ -212,12 +251,12 @@ class UIManager {
    * @private
    */
   _syncHudWithState() {
-    if (!this.hud) return;
+    if (!this.toolbar) return;
 
     const localStats = gameState.getLocalPlayerStats();
     const activeShipProgress = this._getActiveShipProgress();
 
-    this.hud.updateHpXp({
+    this.toolbar.updateHpXp({
       hp: localStats.hp ?? 0,
       maxHp: localStats.maxHp ?? 0,
       xp: activeShipProgress.xp ?? 0,
@@ -231,8 +270,8 @@ class UIManager {
    * @param {Phaser.Cameras.Scene2D.Camera} camera
    */
   tick(camera) {
-    if (this.hud) {
-      this.hud.tick(camera);
+    if (this.toolbar) {
+      this.toolbar.tick(camera);
     }
 
     if (this.minimap) {
@@ -361,9 +400,9 @@ class UIManager {
    * Destroy all UI.
    */
   destroy() {
-    if (this.hud) {
-      this.hud.destroy();
-      this.hud = null;
+    if (this.toolbar) {
+      this.toolbar.destroy();
+      this.toolbar = null;
     }
 
     if (this.minimap) {
@@ -399,6 +438,7 @@ if (typeof window !== 'undefined') {
       return window.UI;
     },
     updateHpXp: (stats) => uiManager.updateHpXp(stats),
+    updateBoost: (data) => uiManager.updateBoost(data),
     tick: (camera) => uiManager.tick(camera),
     updateMinimap: (data) => uiManager.updateMinimap(data)
   };

@@ -68,17 +68,29 @@ class DebugTools {
       playerNamesList: document.getElementById('player-names-list')
     };
 
-    // Show the debug button
-    this.debugButton.style.display = 'block';
+    // Check server config for debug flag
+    fetch('/api/config')
+      .then(res => res.json())
+      .then(config => {
+        if (!config.debug) {
+          this.debugButton.style.display = 'none';
+          return;
+        }
+        this.debugButton.style.display = '';
 
-    // Check localStorage for saved state
-    const savedState = localStorage.getItem('debugPanelVisible');
-    if (savedState === 'true') {
-      this.show();
-    }
+        // Check localStorage for saved state
+        const savedState = localStorage.getItem('debugPanelVisible');
+        if (savedState === 'true') {
+          this.show();
+        }
 
-    // Set up event listeners
-    this._setupEventListeners();
+        // Set up event listeners
+        this._setupEventListeners();
+      })
+      .catch(() => {
+        // If config fetch fails, hide debug by default
+        this.debugButton.style.display = 'none';
+      });
   }
 
   /**

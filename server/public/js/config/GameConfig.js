@@ -7,6 +7,18 @@
 
 import { CLASS_STATS } from '../stats/stats.js';
 
+function clamp01(value) {
+  return Math.max(0, Math.min(1, Number(value) || 0));
+}
+
+function getSfxVolume() {
+  if (typeof window !== 'undefined' && typeof window.getSfxVolume === 'function') {
+    return clamp01(window.getSfxVolume());
+  }
+
+  return 1;
+}
+
 const GameConfig = {
   // World bounds
   world: {
@@ -64,8 +76,17 @@ const GameConfig = {
     maxSpeed: 400,
     acceleration: 200,
     angularSpeed: 420 * (Math.PI / 180),
-    dragFactor: 0.98,
-    gripFactor: 0.2
+    dragFactor: 0.995,
+    gripFactor: 0.045
+  },
+
+  // Boost settings
+  boost: {
+    cooldownMs: 3000,
+    impulse: 430,
+    durationMs: 650,
+    momentumMs: 1400,
+    maxSpeedMultiplier: 2.1
   },
 
   // Movement sync
@@ -79,7 +100,9 @@ const GameConfig = {
   camera: {
     followLerpX: 0.12,
     followLerpY: 0.12,
-    initialZoom: 1.0
+    initialZoom: 1.0,
+    baseWidth: 1280,
+    baseHeight: 720
   },
 
   // Minimap settings
@@ -90,31 +113,50 @@ const GameConfig = {
     worldRange: 600,
     colors: {
       border: 0x00ffff,
-      myDot: 0x00e5ff,
-      otherDot: 0xffffff
+      myDot: 0x44ff66,
+      otherDot: 0xff4444
     }
   },
 
-  // HUD layout constants
-  hud: {
-    x: 16,
-    y: 16,
-    hp: {
-      startX: 50,
-      centerY: 14,
-      endX: 128
-    },
-    xp: {
-      startX: 50,
-      centerY: 48,
-      endX: 128
-    },
-    fillPadX: 2
+  // Reward settings
+  rewards: {
+    playerEliminationXp: 100
+  },
+
+  // Warning thresholds
+  warnings: {
+    lowHpThreshold: 50
   },
 
   // Ping measurement interval
   network: {
     pingInterval: 1000
+  },
+
+  // Collectible settings
+  collectibles: {
+    stars: {
+      collectRadius: 40,
+      defaultXpValue: 30,
+      defaultPointValue: 1
+    }
+  },
+
+  asteroids: {
+    hp: 50,
+    radius: 32,
+    xpValue: 200
+  },
+
+  // Audio settings
+  audio: {
+    defaultSfxVolume: 1
+  },
+
+  getSfxVolume,
+
+  getSfxVolumeFor(baseVolume = 1) {
+    return clamp01(baseVolume) * getSfxVolume();
   },
 
   // Weapon settings
@@ -123,7 +165,22 @@ const GameConfig = {
     bulletLifetime: 2000,
     fireRate: 250,
     bulletDamage: 15,
-    bulletSize: 8
+    bulletSize: 8,
+    laser: {
+      coreLength: 22,
+      coreWidth: 5,
+      haloLength: 32,
+      haloWidth: 14,
+      trailLifespan: 250,
+      muzzleScale: 0.6,
+      impactDuration: 150,
+      colorByClass: {
+        starter: { core: 0xffffff, glow: 0x00e5ff },
+        hunter:  { core: 0xffffff, glow: 0xff3366 },
+        tanker:  { core: 0xffffff, glow: 0xffaa33 }
+      },
+      defaultColor: { core: 0xffffff, glow: 0x00e5ff }
+    }
   },
 
   // Sprite dimensions
@@ -143,7 +200,18 @@ const GameConfig = {
       tanker: 'assets/vector_shipT.svg'
     },
     bullet: 'assets/bullet_defult.png',
-    hudBars: 'assets/Bar.png',
+    laserSound: 'assets/laser.m4a',
+    hitSound: 'assets/hit.mp3',
+    lowHpSound: 'assets/lowhp.m4a',
+    boostSound: 'assets/boost.mp3',
+    asteroid: 'assets/asteroid.png',
+    explodedAsteroid: 'assets/exploded_asteroid.png',
+    asteroidBoom: 'assets/asteroidboom.mp3',
+    weaponHitSound: 'assets/weaponhit.m4a',
+    levelUpSound: 'assets/levelup.mp3',
+    starCollectSound: 'assets/starcollect.mp3',
+    collectibleStar: 'assets/Star.png',
+
     menuIn: 'assets/MenuSliderIn.png',
     menuOut: 'assets/MenuSliderOut.png',
     backdrop: 'assets/backdrop_tile.webp'

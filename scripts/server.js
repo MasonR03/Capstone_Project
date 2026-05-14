@@ -12,13 +12,28 @@ function fileExists(filePath) {
   }
 }
 
+function quoteForCmd(value) {
+  if (value === undefined || value === null) return '""';
+  const str = String(value);
+  if (!/[\s"^&|<>]/.test(str)) return str;
+  return `"${str.replace(/"/g, '""')}"`;
+}
+
+function spawnCommand(command, args, options = {}, stdio = 'inherit') {
+  const baseOptions = { stdio, ...options };
+
+  if (process.platform === 'win32') {
+    const cmd = process.env.ComSpec || 'cmd.exe';
+    const commandLine = [command, ...(args || [])].map(quoteForCmd).join(' ');
+    return spawn(cmd, ['/d', '/s', '/c', commandLine], baseOptions);
+  }
+
+  return spawn(command, args, baseOptions);
+}
+
 function runCommand(command, args, options = {}) {
   return new Promise((resolve) => {
-    const child = spawn(command, args, {
-      stdio: 'inherit',
-      shell: process.platform === 'win32',
-      ...options
-    });
+    const child = spawnCommand(command, args, options, 'inherit');
     child.on('close', (code) => resolve(code ?? 1));
     child.on('error', () => resolve(1));
   });
@@ -26,11 +41,7 @@ function runCommand(command, args, options = {}) {
 
 function runCommandQuiet(command, args, options = {}) {
   return new Promise((resolve) => {
-    const child = spawn(command, args, {
-      stdio: 'ignore',
-      shell: process.platform === 'win32',
-      ...options
-    });
+    const child = spawnCommand(command, args, options, 'ignore');
     child.on('close', (code) => resolve(code ?? 1));
     child.on('error', () => resolve(1));
   });
@@ -242,7 +253,7 @@ async function bootstrapDatabase(projectRoot) {
       return;
     }
 
-    const pushCode = await runCommand(prismaCmd, ['db', 'push'], { cwd: projectRoot, env: process.env });
+    const pushCode = await runCommand(prismaCmd, ['db', 'push', '--accept-data-loss'], { cwd: projectRoot, env: process.env });
     if (pushCode !== 0) {
       console.warn('[bootstrap] Prisma db push failed; starting server anyway.');
     }

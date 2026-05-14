@@ -20,8 +20,8 @@ class Ship {
       maxSpeed: config.maxSpeed || 400,
       acceleration: config.acceleration || 200,
       angularSpeed: config.angularSpeed || (420 * (Math.PI / 180)), // 7.33 rad/s
-      dragFactor: config.dragFactor || 0.98,
-      gripFactor: config.gripFactor || 0.2, // lateral velocity dampening per frame (0=spaceship, higher=car-like)
+      dragFactor: config.dragFactor || 0.995,
+      gripFactor: config.gripFactor || 0.045, // lateral velocity dampening per frame (0=spaceship, higher=car-like)
     };
 
     // Combat/progression stats
@@ -41,6 +41,24 @@ class Ship {
     this.worldWidth = config.worldWidth || 2000;
     this.worldHeight = config.worldHeight || 2000;
     this.borderBuffer = config.borderBuffer || 20;
+
+    // Collision state
+    this.collisionRadius = config.collisionRadius || 26;
+    this.lastCollisionDamageAt = 0;
+    this._atBarrier = false;
+    this.barrierHitThisFrame = false;
+
+    // Boost state
+    this.boostCooldownMs = config.boostCooldownMs || 3000;
+    this.boostImpulse = config.boostImpulse || 430;
+    this.boostDurationMs = config.boostDurationMs || 650;
+    this.boostMomentumMs = config.boostMomentumMs || 1400;
+    this.boostMaxSpeedMultiplier = config.boostMaxSpeedMultiplier || 2.1;
+    this.lastBoostAt = config.lastBoostAt || 0;
+    this.boostActiveUntil = 0;
+    this.boostMomentumUntil = 0;
+    this.boostMomentumSpeedCap = 0;
+    this.boostQueued = false;
   }
 
   /**
@@ -57,6 +75,37 @@ class Ship {
     return this.body;
   }
 
+  getBoostMaxSpeed() {
+    return this.stats.maxSpeed * this.boostMaxSpeedMultiplier;
+  }
+
+  getBoostCooldownRemaining(now = Date.now()) {
+    return Math.max(0, this.boostCooldownMs - (now - this.lastBoostAt));
+  }
+
+  syncBoostVelocityCap(now = Date.now()) {
+    if (!this.body) return;
+
+    let maxVelocity = this.stats.maxSpeed;
+    if (now < this.boostActiveUntil) {
+      maxVelocity = this.getBoostMaxSpeed();
+    } else if (now < this.boostMomentumUntil) {
+      const speed = this.body.velocity.length();
+      if (speed > this.stats.maxSpeed) {
+        maxVelocity = Math.min(
+          this.getBoostMaxSpeed(),
+          Math.max(this.stats.maxSpeed, this.boostMomentumSpeedCap || speed)
+        );
+      }
+    }
+
+    this.body.setMaxVelocity(maxVelocity);
+  }
+
+  queueBoost() {
+    this.boostQueued = true;
+  }
+
   /**
    * Apply movement based on current input state
    * Handles rotation, acceleration, deceleration, and drag
@@ -64,6 +113,8 @@ class Ship {
    */
   applyMovement(physics) {
     if (!this.body) return;
+
+    this.syncBoostVelocityCap();
 
     const input = this.input;
 
@@ -135,31 +186,83 @@ class Ship {
       );
     }
 
+    this.applyBoost();
+
     // Bounds checking with buffer
     this.enforceBounds();
   }
 
+  applyBoost() {
+    if (!this.boostQueued || !this.body) return;
+
+    this.boostQueued = false;
+    if (this.hp <= 0) return;
+
+    const now = Date.now();
+    if (this.getBoostCooldownRemaining(now) > 0) return;
+
+    const angle = this.body.rotation + 1.5;
+    const nextVx = this.body.velocity.x + Math.cos(angle) * this.boostImpulse;
+    const nextVy = this.body.velocity.y + Math.sin(angle) * this.boostImpulse;
+
+    this.body.setVelocity(nextVx, nextVy);
+    this.boostActiveUntil = now + this.boostDurationMs;
+    this.boostMomentumUntil = now + this.boostDurationMs + this.boostMomentumMs;
+    this.boostMomentumSpeedCap = Math.min(
+      this.getBoostMaxSpeed(),
+      Math.sqrt(nextVx * nextVx + nextVy * nextVy)
+    );
+    this.syncBoostVelocityCap(now);
+    this._clampVelocity(this.getBoostMaxSpeed());
+    this.lastBoostAt = now;
+  }
+
+  _clampVelocity(maxSpeed) {
+    if (!this.body || !Number.isFinite(maxSpeed) || maxSpeed <= 0) return;
+
+    const vx = this.body.velocity.x;
+    const vy = this.body.velocity.y;
+    const speed = Math.sqrt(vx * vx + vy * vy);
+
+    if (speed > maxSpeed) {
+      const scale = maxSpeed / speed;
+      this.body.setVelocity(vx * scale, vy * scale);
+    }
+  }
+
   /**
-   * Enforce world boundary constraints
+   * Enforce world boundary constraints.
+   *
+   * Sets {@link Ship#barrierHitThisFrame} to true on the rising edge of a
+   * barrier contact so a ship pressed against the wall is only damaged once.
    */
   enforceBounds() {
     if (!this.body) return;
 
+    let touching = false;
+
     if (this.body.x < this.borderBuffer) {
       this.body.x = this.borderBuffer;
       this.body.setVelocityX(0);
+      touching = true;
     } else if (this.body.x > this.worldWidth - this.borderBuffer) {
       this.body.x = this.worldWidth - this.borderBuffer;
       this.body.setVelocityX(0);
+      touching = true;
     }
 
     if (this.body.y < this.borderBuffer) {
       this.body.y = this.borderBuffer;
       this.body.setVelocityY(0);
+      touching = true;
     } else if (this.body.y > this.worldHeight - this.borderBuffer) {
       this.body.y = this.worldHeight - this.borderBuffer;
       this.body.setVelocityY(0);
+      touching = true;
     }
+
+    this.barrierHitThisFrame = touching && !this._atBarrier;
+    this._atBarrier = touching;
   }
 
   /**
@@ -211,6 +314,7 @@ class Ship {
    * @returns {Object}
    */
     serialize() {
+      const now = Date.now();
       return {
         playerId: this.id,
         classKey: this.classKey,
@@ -225,6 +329,11 @@ class Ship {
         maxHp: this.maxHp,
         xp: this.xp,
         maxXp: this.maxXp,
+        boostCooldownMs: this.boostCooldownMs,
+        boostCooldownRemainingMs: this.getBoostCooldownRemaining(now),
+        boostDurationMs: this.boostDurationMs,
+        boostMomentumMs: this.boostMomentumMs,
+        boostActiveRemainingMs: Math.max(0, this.boostActiveUntil - now),
 
         // Live movement stats
         maxSpeed: this.stats?.maxSpeed ?? 0,

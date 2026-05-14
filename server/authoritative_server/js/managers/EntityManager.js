@@ -24,6 +24,10 @@ class EntityManager {
       height: worldConfig.height || 2000,
       borderBuffer: worldConfig.borderBuffer || 20
     };
+
+    // Collision tuning
+    this.collisionDamageRatio = 0.25;
+    this.collisionCooldownMs = 500;
   }
 
   /**
@@ -103,6 +107,57 @@ class EntityManager {
       ship.applyMovement(this.physics);
       ship.syncFromBody();
     });
+  }
+
+  /**
+   * Detect ship-vs-ship and ship-vs-barrier collisions and apply damage.
+   *
+   * Each ship can only take collision damage once per
+   * {@link EntityManager#collisionCooldownMs}, regardless of how many things
+   * it overlaps in that window. Damage is 25% of the ship's maxHp, rounded up.
+   *
+   * @param {number} now - Current timestamp (ms).
+   * @returns {Array<{shipId:string, source:'ship'|'barrier', otherId?:string, damage:number, killed:boolean}>}
+   */
+  processCollisions(now) {
+    const events = [];
+    const cooldown = this.collisionCooldownMs;
+    const ratio = this.collisionDamageRatio;
+
+    const tryDamage = (ship, source, otherId) => {
+      if (ship.hp <= 0) return;
+      if (now - ship.lastCollisionDamageAt < cooldown) return;
+      const damage = Math.max(1, Math.ceil(ship.maxHp * ratio));
+      const killed = ship.takeDamage(damage);
+      ship.lastCollisionDamageAt = now;
+      events.push({ shipId: ship.id, source, otherId, damage, killed });
+    };
+
+    // Barrier hits (rising-edge flagged in Ship.enforceBounds)
+    this.ships.forEach((ship) => {
+      if (ship.barrierHitThisFrame) {
+        tryDamage(ship, 'barrier', null);
+      }
+    });
+
+    // Ship-vs-ship overlap (circle test on collision radii)
+    const shipArr = Array.from(this.ships.values());
+    for (let i = 0; i < shipArr.length; i++) {
+      const a = shipArr[i];
+      if (a.hp <= 0) continue;
+      for (let j = i + 1; j < shipArr.length; j++) {
+        const b = shipArr[j];
+        if (b.hp <= 0) continue;
+        const dx = a.x - b.x;
+        const dy = a.y - b.y;
+        const r = a.collisionRadius + b.collisionRadius;
+        if (dx * dx + dy * dy > r * r) continue;
+        tryDamage(a, 'ship', b.id);
+        tryDamage(b, 'ship', a.id);
+      }
+    }
+
+    return events;
   }
 
   /**

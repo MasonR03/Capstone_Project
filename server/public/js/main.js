@@ -50,8 +50,8 @@ function initializeGame() {
   const config = {
     type: Phaser.AUTO,
     parent: 'game-container',
-    width: GameConfig.phaser.width,
-    height: GameConfig.phaser.height,
+    width: window.innerWidth,
+    height: window.innerHeight,
     backgroundColor: GameConfig.phaser.backgroundColor,
     physics: GameConfig.phaser.physics,
     scene: GameScene
@@ -59,6 +59,20 @@ function initializeGame() {
 
   game = new Phaser.Game(config);
   window.game = game;
+
+  // Debounced resize handler — keeps canvas filling the viewport
+  let resizeTimeout;
+  window.addEventListener('resize', () => {
+    clearTimeout(resizeTimeout);
+    resizeTimeout = setTimeout(() => {
+      if (!game) return;
+      game.resize(window.innerWidth, window.innerHeight);
+      const scene = game.scene.getScene('GameScene');
+      if (scene && scene.handleResize) {
+        scene.handleResize(window.innerWidth, window.innerHeight);
+      }
+    }, 100);
+  });
 
   console.log('🎮 Phaser game initialized');
   return game;
