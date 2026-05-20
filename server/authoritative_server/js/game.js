@@ -688,4 +688,11 @@ function updateGame(io, frameCount, delta) {
   }
 }
 
-module.exports = { initializeServer };
+module.exports = {
+  initializeServer,
+  getResolvedShipStats,
+  getShipLevel,
+  clampHpToMax,
+  SHIP_CLASSES,
+  DEFAULT_CLASS
+};
